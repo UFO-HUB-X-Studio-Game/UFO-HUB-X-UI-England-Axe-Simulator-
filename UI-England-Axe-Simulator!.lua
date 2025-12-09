@@ -4042,25 +4042,172 @@ registerRight("Home", function(scroll)
         end
     end)
 end)
---===== UFO HUB X • Home – Auto Rebirth (Model A V1 + A V2 + AA1) =====
--- Tab: Home
--- Header: Auto Rebirth 🔁
--- Row1  : Auto Rebirth (สวิตช์ Model A V1)
--- Row2  : Select Rebirth Amount (Model A V2: แถว + ปุ่ม 🔍 Select Options + Panel ด้านขวา)
--- Logic :
---   - ถ้ายังไม่เลือกจำนวนจาก Row2 -> Auto Rebirth จะวน 36 → 1 → 36 … เร็ว (interval สั้น)
---   - ถ้าเลือกจำนวนจาก Row2 -> Auto Rebirth จะใช้จำนวนที่เลือกเท่านั้น (FIXED)
---   - ถ้ากดปุ่มจำนวนเดิมใน Panel ซ้ำ → ยกเลิก FIXED กลับไป SEQUENCE
---   - มีระบบเซฟ AA1: Enabled / Mode ("SEQUENCE" or "FIXED") / Amount (1–36)
---   - Auto-run จาก Save: ถ้าเคยเปิด Auto Rebirth ไว้ จะทำงานทันทีตอนโหลด UI
+--===== UFO HUB X • Home – Auto Rebirth (AA1 Runner + Model A V1 + A V2) =====
+-- Logic main:
+--   • ส่วน AA1 (ด้านบน) รันทันทีตอนโหลดสคริปต์ (ไม่ต้องกด Home)
+--   • ส่วน UI (registerRight("Home")) แค่ sync ปุ่มกับ STATE ของ AA1
+
+----------------------------------------------------------------------
+-- AA1 RUNNER (ไม่มี UI, ทำงานทันทีตอนรันสคริปต์)
+----------------------------------------------------------------------
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    ------------------------------------------------------------------
+    -- SAVE (AA1) ใช้ getgenv().UFOX_SAVE
+    ------------------------------------------------------------------
+    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+        get = function(_, _, d) return d end,
+        set = function() end,
+    }
+
+    local GAME_ID  = tonumber(game.GameId)  or 0
+    local PLACE_ID = tonumber(game.PlaceId) or 0
+
+    -- AA1/HomeAutoRebirth/<GAME>/<PLACE>/(Enabled|Mode|Amount)
+    local BASE_SCOPE = ("AA1/HomeAutoRebirth/%d/%d"):format(GAME_ID, PLACE_ID)
+
+    local function K(field)
+        return BASE_SCOPE .. "/" .. field
+    end
+
+    local function SaveGet(field, default)
+        local ok, v = pcall(function()
+            return SAVE.get(K(field), default)
+        end)
+        return ok and v or default
+    end
+
+    local function SaveSet(field, value)
+        pcall(function()
+            SAVE.set(K(field), value)
+        end)
+    end
+
+    ------------------------------------------------------------------
+    -- STATE จาก AA1
+    ------------------------------------------------------------------
+    local STATE = {
+        Enabled = SaveGet("Enabled", false),       -- เปิด Auto Rebirth อยู่ไหม
+        Mode    = SaveGet("Mode", "SEQUENCE"),     -- "SEQUENCE" หรือ "FIXED"
+        Amount  = SaveGet("Amount", 1),            -- 1–36
+    }
+
+    if type(STATE.Amount) ~= "number" or STATE.Amount < 1 or STATE.Amount > 36 then
+        STATE.Amount = 1
+        SaveSet("Amount", STATE.Amount)
+    end
+
+    if STATE.Mode ~= "FIXED" and STATE.Mode ~= "SEQUENCE" then
+        STATE.Mode = "SEQUENCE"
+        SaveSet("Mode", STATE.Mode)
+    end
+
+    ------------------------------------------------------------------
+    -- REMOTE: Rebirth
+    ------------------------------------------------------------------
+    local function getRebirthRemote()
+        local ok, rf = pcall(function()
+            local paper   = ReplicatedStorage:WaitForChild("Paper")
+            local remotes = paper:WaitForChild("Remotes")
+            return remotes:WaitForChild("__remotefunction")
+        end)
+        if not ok then
+            warn("[UFO HUB X • Auto Rebirth AA1] cannot get __remotefunction")
+            return nil
+        end
+        return rf
+    end
+
+    local function doRebirth(amount)
+        amount = math.clamp(math.floor(tonumber(amount) or 1), 1, 36)
+        local rf = getRebirthRemote()
+        if not rf then return end
+
+        local args = { "Rebirth", amount }
+        local ok, err = pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+        if not ok then
+            warn("[UFO HUB X • Auto Rebirth AA1] Rebirth(",amount,") error:", err)
+        end
+    end
+
+    ------------------------------------------------------------------
+    -- LOOP AUTO REBIRTH (วิ่งจริงจาก STATE)
+    ------------------------------------------------------------------
+    local AUTO_INTERVAL = 0.03   -- เร็ว
+    local loopRunning   = false
+
+    local function startAutoLoop()
+        if loopRunning then return end
+        loopRunning = true
+
+        task.spawn(function()
+            while STATE.Enabled do
+                if STATE.Mode == "FIXED" then
+                    doRebirth(STATE.Amount)
+                    task.wait(AUTO_INTERVAL)
+                else
+                    for amt = 36, 1, -1 do
+                        if not STATE.Enabled then break end
+                        doRebirth(amt)
+                        task.wait(AUTO_INTERVAL)
+                    end
+                end
+            end
+            loopRunning = false
+        end)
+    end
+
+    local function applyFromState()
+        if STATE.Enabled then
+            startAutoLoop()
+        end
+    end
+
+    ------------------------------------------------------------------
+    -- EXPORT AA1 + AUTO-RUN ทันทีตอนโหลดสคริปต์หลัก
+    ------------------------------------------------------------------
+    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
+    _G.UFOX_AA1["HomeAutoRebirth"] = {
+        state      = STATE,
+        apply      = applyFromState,
+        setEnabled = function(v)
+            STATE.Enabled = v and true or false
+            SaveSet("Enabled", STATE.Enabled)
+            applyFromState()
+        end,
+        setMode    = function(mode)
+            if mode ~= "FIXED" and mode ~= "SEQUENCE" then return end
+            STATE.Mode = mode
+            SaveSet("Mode", STATE.Mode)
+            applyFromState()
+        end,
+        setAmount  = function(amount)
+            STATE.Amount = math.clamp(math.floor(tonumber(amount) or 1), 1, 36)
+            SaveSet("Amount", STATE.Amount)
+        end,
+        saveGet    = SaveGet,
+        saveSet    = SaveSet,
+    }
+
+    -- AA1: ถ้าเคยเปิดไว้ → รันเลย โดยไม่ต้องกด Home
+    task.defer(function()
+        applyFromState()
+    end)
+end
+
+----------------------------------------------------------------------
+-- UI PART: Model A V1 + Model A V2 ใน Tab Home (Sync กับ AA1 ตัวบน)
+----------------------------------------------------------------------
 
 registerRight("Home", function(scroll)
-    local TweenService       = game:GetService("TweenService")
-    local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-    local UserInputService   = game:GetService("UserInputService")
+    local TweenService     = game:GetService("TweenService")
+    local UserInputService = game:GetService("UserInputService")
 
     ------------------------------------------------------------------------
-    -- THEME + HELPERS (Model A V1 / V2)
+    -- THEME + HELPERS
     ------------------------------------------------------------------------
     local THEME = {
         GREEN       = Color3.fromRGB(25,255,125),
@@ -4099,141 +4246,13 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- AA1 SAVE (HomeAutoRebirth) • ใช้ getgenv().UFOX_SAVE
+    -- ดึง AA1 STATE (จากบล็อกด้านบน)
     ------------------------------------------------------------------------
-    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
-        get = function(_, _, d) return d end,
-        set = function() end,
-    }
-
-    local GAME_ID  = tonumber(game.GameId)  or 0
-    local PLACE_ID = tonumber(game.PlaceId) or 0
-
-    -- AA1/HomeAutoRebirth/<GAME>/<PLACE>/(Enabled|Mode|Amount)
-    local BASE_SCOPE = ("AA1/HomeAutoRebirth/%d/%d"):format(GAME_ID, PLACE_ID)
-
-    local function K(field)
-        return BASE_SCOPE .. "/" .. field
-    end
-
-    local function SaveGet(field, default)
-        local ok, v = pcall(function()
-            return SAVE.get(K(field), default)
-        end)
-        return ok and v or default
-    end
-
-    local function SaveSet(field, value)
-        pcall(function()
-            SAVE.set(K(field), value)
-        end)
-    end
-
-    -- STATE เริ่มจาก AA1
-    local STATE = {
-        Enabled = SaveGet("Enabled", false),          -- เปิด Auto Rebirth อยู่ไหม
-        Mode    = SaveGet("Mode", "SEQUENCE"),        -- "SEQUENCE" หรือ "FIXED"
-        Amount  = SaveGet("Amount", 1),               -- จำนวน Rebirth ที่เลือกตอน FIXED (1–36)
-    }
-
-    -- ตรวจสอบค่า Amount ให้อยู่ในช่วง 1–36
-    if type(STATE.Amount) ~= "number" or STATE.Amount < 1 or STATE.Amount > 36 then
-        STATE.Amount = 1
-        SaveSet("Amount", STATE.Amount)
-    end
-
-    if STATE.Mode ~= "FIXED" and STATE.Mode ~= "SEQUENCE" then
-        STATE.Mode = "SEQUENCE"
-        SaveSet("Mode", STATE.Mode)
-    end
-
-    ------------------------------------------------------------------------
-    -- REMOTE: Rebirth (ใช้ "__remotefunction":InvokeServer("Rebirth", amount))
-    ------------------------------------------------------------------------
-    local function getRebirthRemote()
-        local ok, rf = pcall(function()
-            local paper   = ReplicatedStorage:WaitForChild("Paper")
-            local remotes = paper:WaitForChild("Remotes")
-            return remotes:WaitForChild("__remotefunction")
-        end)
-        if not ok then
-            warn("[UFO HUB X • Auto Rebirth] cannot get __remotefunction")
-            return nil
-        end
-        return rf
-    end
-
-    local function doRebirth(amount)
-        amount = math.clamp(math.floor(tonumber(amount) or 1), 1, 36)
-        local rf = getRebirthRemote()
-        if not rf then return end
-
-        local args = { "Rebirth", amount }
-        local ok, err = pcall(function()
-            rf:InvokeServer(unpack(args))
-        end)
-        if not ok then
-            warn("[UFO HUB X • Auto Rebirth] Rebirth(",amount,") error:", err)
-        end
-    end
-
-    ------------------------------------------------------------------------
-    -- LOOP AUTO REBIRTH (เร็ว)
-    ------------------------------------------------------------------------
-    local AUTO_INTERVAL = 0.03   -- เร็วมาก
-    local loopRunning   = false
-
-    local function startAutoLoop()
-        if loopRunning then return end
-        loopRunning = true
-
-        task.spawn(function()
-            while STATE.Enabled do
-                if STATE.Mode == "FIXED" then
-                    doRebirth(STATE.Amount)
-                    task.wait(AUTO_INTERVAL)
-                else
-                    -- SEQUENCE: ไล่จาก 36 → 1 → 36 → ...
-                    for amt = 36, 1, -1 do
-                        if not STATE.Enabled then break end
-                        doRebirth(amt)
-                        task.wait(AUTO_INTERVAL)
-                    end
-                end
-            end
-            loopRunning = false
-        end)
-    end
-
-    local function applyFromState()
-        if STATE.Enabled then
-            startAutoLoop()
-        end
-    end
-
-    ------------------------------------------------------------------------
-    -- EXPORT AA1 (เผื่อใช้ที่อื่น)
-    ------------------------------------------------------------------------
-    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
-    _G.UFOX_AA1["HomeAutoRebirth"] = {
-        state      = STATE,
-        apply      = applyFromState,
-        setEnabled = function(v)
-            STATE.Enabled = v and true or false
-            SaveSet("Enabled", STATE.Enabled)
-            applyFromState()
-        end,
-        setMode    = function(mode)
-            STATE.Mode = mode
-            SaveSet("Mode", STATE.Mode)
-            applyFromState()
-        end,
-        setAmount  = function(amount)
-            STATE.Amount = math.clamp(math.floor(tonumber(amount) or 1), 1, 36)
-            SaveSet("Amount", STATE.Amount)
-        end,
-        saveGet    = SaveGet,
-        saveSet    = SaveSet,
+    local AA1  = _G.UFOX_AA1 and _G.UFOX_AA1["HomeAutoRebirth"]
+    local STATE = (AA1 and AA1.state) or {
+        Enabled = false,
+        Mode    = "SEQUENCE",
+        Amount  = 1,
     }
 
     ------------------------------------------------------------------------
@@ -4344,7 +4363,6 @@ registerRight("Home", function(scroll)
             setState(not currentOn, true)
         end)
 
-        -- initial
         updateVisual(currentOn)
 
         return {
@@ -4355,7 +4373,7 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Row1: Auto Rebirth (สวิตช์ A V1)
+    -- Row1: Auto Rebirth (สวิตช์ A V1) → เรียก AA1.setEnabled
     ------------------------------------------------------------------------
     local autoRebirthRow = makeRowSwitch(
         "A1_Home_AutoRebirth",
@@ -4363,14 +4381,14 @@ registerRight("Home", function(scroll)
         "Auto Rebirth",
         STATE.Enabled,
         function(state)
-            STATE.Enabled = state and true or false
-            SaveSet("Enabled", STATE.Enabled)
-            applyFromState()
+            if AA1 and AA1.setEnabled then
+                AA1.setEnabled(state)
+            end
         end
     )
 
     ------------------------------------------------------------------------
-    -- Model A V2 PART: แถว + ปุ่ม Select Options + Panel ด้านขวา (เป๊ะแบบ V A2)
+    -- Model A V2 PART: แถว + ปุ่ม Select Options + Panel ด้านขวา
     ------------------------------------------------------------------------
     local panelParent = scroll.Parent  -- กรอบฝั่งขวา
     local amountPanel
@@ -4416,7 +4434,6 @@ registerRight("Home", function(scroll)
     end
 
     local function openAmountPanel()
-        -- กัน panel ซ้อน
         destroyAmountPanel()
 
         if not panelParent or not panelParent.AbsoluteSize then
@@ -4424,7 +4441,7 @@ registerRight("Home", function(scroll)
         end
 
         --------------------------------------------------------------------
-        -- วัดตำแหน่ง/ขนาด panel ด้านขวา (เหมือน V A2)
+        -- วัดตำแหน่ง / ขนาด panel ด้านขวา (เหมือน V A2)
         --------------------------------------------------------------------
         local pw, ph = panelParent.AbsoluteSize.X, panelParent.AbsoluteSize.Y
         local leftRatio   = 0.645
@@ -4453,7 +4470,7 @@ registerRight("Home", function(scroll)
         stroke(amountPanel, 2.4, THEME.GREEN)
 
         --------------------------------------------------------------------
-        -- BODY ด้านใน (ขยับเข้ามา ไม่ให้ชนกรอบเขียว)
+        -- BODY ด้านใน
         --------------------------------------------------------------------
         local body = Instance.new("Frame")
         body.Name = "Body"
@@ -4487,7 +4504,7 @@ registerRight("Home", function(scroll)
         sbStroke.ZIndex = searchBox.ZIndex + 1
 
         --------------------------------------------------------------------
-        -- Scrolling list holder (เหมือน V A2)
+        -- ScrollingFrame (เหมือน V A2)
         --------------------------------------------------------------------
         local listHolder = Instance.new("ScrollingFrame")
         listHolder.Name = "AmountList"
@@ -4502,7 +4519,7 @@ registerRight("Home", function(scroll)
         listHolder.ScrollingDirection = Enum.ScrollingDirection.Y
         listHolder.ClipsDescendants = true
 
-        local listTopOffset = 32 + 10 -- Search(32) + gap10
+        local listTopOffset = 32 + 10
         listHolder.Position = UDim2.new(0, 0, 0, listTopOffset)
         listHolder.Size     = UDim2.new(1, 0, 1, -(listTopOffset + 4))
 
@@ -4520,7 +4537,7 @@ registerRight("Home", function(scroll)
         listPadding.PaddingRight = UDim.new(0, 4)
 
         --------------------------------------------------------------------
-        -- กันไม่ให้ CanvasPosition.X เลื่อนไปทางซ้าย/ขวา (เหมือน V A2)
+        -- กัน Canvas X เลื่อน (เหมือน V A2)
         --------------------------------------------------------------------
         local locking = false
         listHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
@@ -4534,7 +4551,7 @@ registerRight("Home", function(scroll)
         end)
 
         --------------------------------------------------------------------
-        -- ปุ่มเรืองแสง + แถบเขียวด้านซ้าย (แทน A1–A10 เป็น 1–36 Rebirth)
+        -- ปุ่มเรืองแสง 1–36 Rebirth (Glow + Left Bar แบบ V A2)
         --------------------------------------------------------------------
         amountButtons = {}
         allButtons    = {}
@@ -4579,26 +4596,25 @@ registerRight("Home", function(scroll)
             table.insert(allButtons, btn)
 
             btn.MouseButton1Click:Connect(function()
-                -- ถ้ากดจำนวนเดิมขณะที่อยู่โหมด FIXED -> ยกเลิก FIXED กลับ SEQUENCE
+                if not AA1 then return end
+
+                -- ถ้ากดจำนวนเดิมในโหมด FIXED → ยกเลิก FIXED กลับ SEQUENCE
                 if STATE.Mode == "FIXED" and STATE.Amount == amount then
-                    STATE.Mode = "SEQUENCE"
-                    SaveSet("Mode", STATE.Mode)
-                    -- ไม่จำเป็นต้องเปลี่ยน Amount แต่จะไม่ใช้แล้ว
+                    AA1.setMode("SEQUENCE")
+                    -- STATE shared ผ่าน AA1.state อยู่แล้ว
                     updateAmountHighlight()
-                    applyFromState()
+                    AA1.apply()
                     return
                 end
 
-                -- เลือกจำนวนนี้ -> เปลี่ยนเป็นโหมด FIXED
-                STATE.Mode   = "FIXED"
-                STATE.Amount = amount
-                SaveSet("Mode", STATE.Mode)
-                SaveSet("Amount", STATE.Amount)
+                -- เลือกจำนวนใหม่ → FIXED + ตั้ง Amount
+                AA1.setAmount(amount)
+                AA1.setMode("FIXED")
 
                 updateAmountHighlight()
 
-                -- ถ้าเปิด Auto Rebirth อยู่ ให้ apply ทันที
-                applyFromState()
+                -- ถ้าเปิด Auto Rebirth อยู่แล้ว → loop จะวิ่งต่อด้วยจำนวนใหม่
+                AA1.apply()
             end)
 
             return btn
@@ -4612,7 +4628,7 @@ registerRight("Home", function(scroll)
         updateAmountHighlight()
 
         --------------------------------------------------------------------
-        -- Search filter (เหมือน V A2)
+        -- Search filter
         --------------------------------------------------------------------
         local function applySearch()
             local q = trim(searchBox.Text or "")
@@ -4642,36 +4658,37 @@ registerRight("Home", function(scroll)
         end)
 
         --------------------------------------------------------------------
-        -- ปิด panel เมื่อแตะนอกกรอบ (เหมือน V A2)
+        -- ปิด panel เมื่อกด "ตรงไหนก็ได้ทั้งหน้าจอ" ยกเว้นใน panel นี้
+        -- ( *ไม่มี* เช็ค gp เพื่อให้คลิกปุ่ม/แท็บอื่นก็ปิดได้ )
         --------------------------------------------------------------------
-        inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+        inputConn = UserInputService.InputBegan:Connect(function(input)
             if not amountPanel then return end
-            if gp then return end
             if input.UserInputType ~= Enum.UserInputType.MouseButton1
-                and input.UserInputType ~= Enum.UserInputType.Touch then
+               and input.UserInputType ~= Enum.UserInputType.Touch then
                 return
             end
 
             local pos = input.Position
-            local op = amountPanel.AbsolutePosition
-            local os = amountPanel.AbsoluteSize
+            local op  = amountPanel.AbsolutePosition
+            local os  = amountPanel.AbsoluteSize
 
             local inside =
                 pos.X >= op.X and pos.X <= op.X + os.X and
                 pos.Y >= op.Y and pos.Y <= op.Y + os.Y
 
+            -- กดนอกกรอบ panel ด้านขวา → ปิด
             if not inside then
                 destroyAmountPanel()
             end
         end)
-    end -- end of openAmountPanel
+    end
 
     local function closeAmountPanel()
         destroyAmountPanel()
     end
 
     ------------------------------------------------------------------------
-    -- Row2: แถว + ปุ่ม Select Options แบบ A V2 เป๊ะ
+    -- Row2: แถว + ปุ่ม Select Options (โมเดล A V2 เป๊ะ)
     ------------------------------------------------------------------------
     local row2 = Instance.new("Frame")
     row2.Name = "VA2_Rebirth_Row"
@@ -4755,13 +4772,12 @@ registerRight("Home", function(scroll)
     end)
 
     ------------------------------------------------------------------------
-    -- AA1 Auto-Run ตอนโหลด (Sync UI + Loop)
+    -- Sync UI จาก STATE ที่เซฟไว้ (ตอนเปิด Tab Home)
     ------------------------------------------------------------------------
     task.defer(function()
-        -- sync สวิตช์ตาม STATE.Enabled
         autoRebirthRow.setState(STATE.Enabled, false)
-        -- ถ้า Enabled = true ให้เริ่ม loop ทันที
-        applyFromState()
+        -- highlight ปุ่มใน panel (ถ้าเปิด panel ทีหลังจะใช้ STATE เดิม)
+        -- (ตัว updateAmountHighlight จะถูกเรียกตอน openAmountPanel)
     end)
 end) 
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
