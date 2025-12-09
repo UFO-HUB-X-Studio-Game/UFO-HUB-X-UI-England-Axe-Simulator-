@@ -4048,8 +4048,9 @@ end)
 -- Row1  : Auto Rebirth (สวิตช์ Model A V1)
 -- Row2  : Select Rebirth Amount (Model A V2: แถว + ปุ่ม 🔍 Select Options + Panel ด้านขวา)
 -- Logic :
---   - ถ้ายังไม่เลือกจำนวนจาก Row2 -> Auto Rebirth จะวน 36 → 1 → 36 … เร็วขึ้น (interval สั้น)
+--   - ถ้ายังไม่เลือกจำนวนจาก Row2 -> Auto Rebirth จะวน 36 → 1 → 36 … เร็ว (interval สั้น)
 --   - ถ้าเลือกจำนวนจาก Row2 -> Auto Rebirth จะใช้จำนวนที่เลือกเท่านั้น (FIXED)
+--   - ถ้ากดปุ่มจำนวนเดิมใน Panel ซ้ำ → ยกเลิก FIXED กลับไป SEQUENCE
 --   - มีระบบเซฟ AA1: Enabled / Mode ("SEQUENCE" or "FIXED") / Amount (1–36)
 --   - Auto-run จาก Save: ถ้าเคยเปิด Auto Rebirth ไว้ จะทำงานทันทีตอนโหลด UI
 
@@ -4091,6 +4092,10 @@ registerRight("Home", function(scroll)
             TweenInfo.new(d or 0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
             p
         ):Play()
+    end
+
+    local function trim(s)
+        return (s:gsub("^%s*(.-)%s*$", "%1"))
     end
 
     ------------------------------------------------------------------------
@@ -4173,9 +4178,9 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- LOOP AUTO REBIRTH (เร็วขึ้น)
+    -- LOOP AUTO REBIRTH (เร็ว)
     ------------------------------------------------------------------------
-    local AUTO_INTERVAL = 0.03   -- เดิม 0.15 → ปรับให้เร็วขึ้นมาก
+    local AUTO_INTERVAL = 0.03   -- เร็วมาก
     local loopRunning   = false
 
     local function startAutoLoop()
@@ -4185,7 +4190,6 @@ registerRight("Home", function(scroll)
         task.spawn(function()
             while STATE.Enabled do
                 if STATE.Mode == "FIXED" then
-                    -- FIXED: ใช้จำนวนเดียวที่เลือก
                     doRebirth(STATE.Amount)
                     task.wait(AUTO_INTERVAL)
                 else
@@ -4366,14 +4370,15 @@ registerRight("Home", function(scroll)
     )
 
     ------------------------------------------------------------------------
-    -- Model A V2 PART: แถว + ปุ่ม Select Options + Panel ด้านขวา
+    -- Model A V2 PART: แถว + ปุ่ม Select Options + Panel ด้านขวา (เป๊ะแบบ V A2)
     ------------------------------------------------------------------------
-    local panelParent = scroll.Parent  -- กรอบฝั่งขวา (เหมือน V A2)
+    local panelParent = scroll.Parent  -- กรอบฝั่งขวา
     local amountPanel
     local inputConn
     local opened = false
 
     local amountButtons = {}   -- [amt] = {button, stroke, glow}
+    local allButtons    = {}
 
     local function disconnectInput()
         if inputConn then
@@ -4389,6 +4394,7 @@ registerRight("Home", function(scroll)
         end
         disconnectInput()
         amountButtons = {}
+        allButtons    = {}
         opened = false
     end
 
@@ -4418,7 +4424,7 @@ registerRight("Home", function(scroll)
         end
 
         --------------------------------------------------------------------
-        -- วัดตำแหน่ง/ขนาด panel ด้านขวา (เหมือน V A2 เป๊ะ ๆ)
+        -- วัดตำแหน่ง/ขนาด panel ด้านขวา (เหมือน V A2)
         --------------------------------------------------------------------
         local pw, ph = panelParent.AbsoluteSize.X, panelParent.AbsoluteSize.Y
         local leftRatio   = 0.645
@@ -4531,7 +4537,7 @@ registerRight("Home", function(scroll)
         -- ปุ่มเรืองแสง + แถบเขียวด้านซ้าย (แทน A1–A10 เป็น 1–36 Rebirth)
         --------------------------------------------------------------------
         amountButtons = {}
-        local allButtons = {}
+        allButtons    = {}
 
         local function makeGlowButton(amount)
             local label = ("%d Rebirth"):format(amount)
@@ -4573,6 +4579,16 @@ registerRight("Home", function(scroll)
             table.insert(allButtons, btn)
 
             btn.MouseButton1Click:Connect(function()
+                -- ถ้ากดจำนวนเดิมขณะที่อยู่โหมด FIXED -> ยกเลิก FIXED กลับ SEQUENCE
+                if STATE.Mode == "FIXED" and STATE.Amount == amount then
+                    STATE.Mode = "SEQUENCE"
+                    SaveSet("Mode", STATE.Mode)
+                    -- ไม่จำเป็นต้องเปลี่ยน Amount แต่จะไม่ใช้แล้ว
+                    updateAmountHighlight()
+                    applyFromState()
+                    return
+                end
+
                 -- เลือกจำนวนนี้ -> เปลี่ยนเป็นโหมด FIXED
                 STATE.Mode   = "FIXED"
                 STATE.Amount = amount
@@ -4596,12 +4612,8 @@ registerRight("Home", function(scroll)
         updateAmountHighlight()
 
         --------------------------------------------------------------------
-        -- Search filter (เหมือน V A2 logic)
+        -- Search filter (เหมือน V A2)
         --------------------------------------------------------------------
-        local function trim(s)
-            return (s:gsub("^%s*(.-)%s*$", "%1"))
-        end
-
         local function applySearch()
             local q = trim(searchBox.Text or "")
             q = string.lower(q)
@@ -4659,7 +4671,7 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Row2: แบบ A V2 จริง ๆ (แถว + ปุ่ม 🔍 Select Options ด้านขวา)
+    -- Row2: แถว + ปุ่ม Select Options แบบ A V2 เป๊ะ
     ------------------------------------------------------------------------
     local row2 = Instance.new("Frame")
     row2.Name = "VA2_Rebirth_Row"
