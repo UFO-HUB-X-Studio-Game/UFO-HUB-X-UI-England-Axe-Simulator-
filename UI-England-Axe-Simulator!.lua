@@ -4253,8 +4253,8 @@ registerRight("Home", function(scroll)
     ------------------------------------------------------------------------
     local REBIRTH_LABELS = {
         [1] = "1 Rebirth",
-        [1] = "5 Rebirth",
-        [1] = "20 Rebirth",
+        [2] = "5 Rebirth",
+        [3] = "20 Rebirth",
         -- ไม่ใส่ = ใช้ค่า default "%d Rebirth"
     }
 
