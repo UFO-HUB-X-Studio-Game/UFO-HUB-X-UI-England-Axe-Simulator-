@@ -4246,6 +4246,23 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
+    -- CONFIG: ปรับชื่อปุ่ม Rebirth 1–36 ได้จากตรงนี้
+    -- ตัวอย่าง:
+    -- [1] = "x1 Rebirth",
+    -- [2] = "x2 Rebirth (Fast)",
+    ------------------------------------------------------------------------
+    local REBIRTH_LABELS = {
+        [1] = "1 Rebirth",
+        [1] = "5 Rebirth",
+        [1] = "20 Rebirth",
+        -- ไม่ใส่ = ใช้ค่า default "%d Rebirth"
+    }
+
+    local function getRebirthLabel(amount)
+        return REBIRTH_LABELS[amount] or (tostring(amount) .. " Rebirth")
+    end
+
+    ------------------------------------------------------------------------
     -- ดึง AA1 STATE (จากบล็อกด้านบน)
     ------------------------------------------------------------------------
     local AA1  = _G.UFOX_AA1 and _G.UFOX_AA1["HomeAutoRebirth"]
@@ -4286,7 +4303,7 @@ registerRight("Home", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "Auto Rebirth 🔁"
+    header.Text = "》》》Auto Rebirth 🔁《《《"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
@@ -4557,7 +4574,7 @@ registerRight("Home", function(scroll)
         allButtons    = {}
 
         local function makeGlowButton(amount)
-            local label = ("%d Rebirth"):format(amount)
+            local label = getRebirthLabel(amount)
 
             local btn = Instance.new("TextButton")
             btn.Name = "Btn_Rebirth_" .. tostring(amount)
@@ -4601,7 +4618,6 @@ registerRight("Home", function(scroll)
                 -- ถ้ากดจำนวนเดิมในโหมด FIXED → ยกเลิก FIXED กลับ SEQUENCE
                 if STATE.Mode == "FIXED" and STATE.Amount == amount then
                     AA1.setMode("SEQUENCE")
-                    -- STATE shared ผ่าน AA1.state อยู่แล้ว
                     updateAmountHighlight()
                     AA1.apply()
                     return
@@ -4612,8 +4628,6 @@ registerRight("Home", function(scroll)
                 AA1.setMode("FIXED")
 
                 updateAmountHighlight()
-
-                -- ถ้าเปิด Auto Rebirth อยู่แล้ว → loop จะวิ่งต่อด้วยจำนวนใหม่
                 AA1.apply()
             end)
 
@@ -4659,7 +4673,6 @@ registerRight("Home", function(scroll)
 
         --------------------------------------------------------------------
         -- ปิด panel เมื่อกด "ตรงไหนก็ได้ทั้งหน้าจอ" ยกเว้นใน panel นี้
-        -- ( *ไม่มี* เช็ค gp เพื่อให้คลิกปุ่ม/แท็บอื่นก็ปิดได้ )
         --------------------------------------------------------------------
         inputConn = UserInputService.InputBegan:Connect(function(input)
             if not amountPanel then return end
@@ -4676,7 +4689,6 @@ registerRight("Home", function(scroll)
                 pos.X >= op.X and pos.X <= op.X + os.X and
                 pos.Y >= op.Y and pos.Y <= op.Y + os.Y
 
-            -- กดนอกกรอบ panel ด้านขวา → ปิด
             if not inside then
                 destroyAmountPanel()
             end
@@ -4776,8 +4788,6 @@ registerRight("Home", function(scroll)
     ------------------------------------------------------------------------
     task.defer(function()
         autoRebirthRow.setState(STATE.Enabled, false)
-        -- highlight ปุ่มใน panel (ถ้าเปิด panel ทีหลังจะใช้ STATE เดิม)
-        -- (ตัว updateAmountHighlight จะถูกเรียกตอน openAmountPanel)
     end)
 end) 
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
