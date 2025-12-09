@@ -3993,7 +3993,7 @@ registerRight("Home", function(scroll)
     local autoMineRow
     local autoTrainRow
 
-    autoMineRow = makeRowSwitch("A1_Home_AutoMine", base + 2, "Enable Auto Mine", function(state)
+    autoMineRow = makeRowSwitch("A1_Home_AutoMine", base + 2, "Auto Mine", function(state)
         autoMineOn  = state
         SaveSet("AutoMine", state)
 
@@ -4013,7 +4013,7 @@ registerRight("Home", function(scroll)
         end
     end)
 
-    autoTrainRow = makeRowSwitch("A1_Home_AutoTrain", base + 3, "Enable Auto Train", function(state)
+    autoTrainRow = makeRowSwitch("A1_Home_AutoTrain", base + 3, "Auto Train", function(state)
         autoTrainOn = state
         SaveSet("AutoTrain", state)
 
@@ -4335,7 +4335,7 @@ registerRight("Shop", function(scroll)
     -----------------------------------------------------------------
     local autoSellRow
 
-    autoSellRow = makeRowSwitch("A1_Shop_AutoSell", base + 2, "Enable Auto Sell Ores", function(state)
+    autoSellRow = makeRowSwitch("A1_Shop_AutoSell", base + 2, "Auto Sell Ores", function(state)
         if AA1 and AA1.setEnabled then
             AA1.setEnabled(state)
         else
@@ -4553,7 +4553,7 @@ registerRight("Shop", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "》》》Auto Buy Pickaxe & Miners 🛒《《《"
+    header.Text = "》》》Auto Buy Pickaxe & Miners ⛏️《《《"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
@@ -4646,7 +4646,7 @@ registerRight("Shop", function(scroll)
     local rowPickaxe = makeRowSwitch(
         "A1_Shop_AutoBuy_Pickaxe",
         base + 2,
-        "Enable Auto Buy Pickaxe",
+        "Auto Buy Pickaxe",
         function(state)
             autoPickaxeOn = state
             SaveSet("AutoPickaxe", state)
@@ -4662,7 +4662,7 @@ registerRight("Shop", function(scroll)
     local rowMiner = makeRowSwitch(
         "A1_Shop_AutoBuy_Miners",
         base + 3,
-        "Enable Auto Buy Miners",
+        "Auto Buy Miners",
         function(state)
             autoMinerOn = state
             SaveSet("AutoMiners", state)
