@@ -4273,6 +4273,10 @@ registerRight("Home", function(scroll)
         [19] = "10M Rebirth",
         [20] = "25M Rebirth",
         [21] = "100M Rebirth",
+        [22] = "1B Rebirth",
+        [23] = "50B Rebirth",
+        [24] = "500B Rebirth",
+        [25] = "5T Rebirth",
         -- ไม่ใส่ = ใช้ค่า default "%d Rebirth"
     }
 
