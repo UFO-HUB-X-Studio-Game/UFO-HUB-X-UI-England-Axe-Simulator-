@@ -4264,6 +4264,15 @@ registerRight("Home", function(scroll)
         [10] = "5K Rebirth",
         [11] = "10K Rebirth",
         [12] = "25K Rebirth",
+        [13] = "50K Rebirth",
+        [14] = "100K Rebirth",
+        [15] = "250K Rebirth",
+        [16] = "500K Rebirth",
+        [17] = "1M Rebirth",
+        [18] = "2.5M Rebirth",
+        [19] = "10M Rebirth",
+        [20] = "25M Rebirth",
+        [21] = "100M Rebirth",
         -- ไม่ใส่ = ใช้ค่า default "%d Rebirth"
     }
 
