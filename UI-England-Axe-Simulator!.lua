@@ -4799,6 +4799,399 @@ registerRight("Home", function(scroll)
         autoRebirthRow.setState(STATE.Enabled, false)
     end)
 end) 
+--===== UFO HUB X • Home – Auto Claim Rewards 🎁 (Model A V1 + AA1) =====
+-- Tab: Home
+-- Header: Auto Claim Rewards 🎁
+-- Row1: Auto Claim Aura Egg (15 min)  -> Claim Time Reward + Use Aura Egg
+-- Row2: Auto Claim Daily Chest        -> Claim Chest "DailyChest"
+-- Row3: Auto Claim Group Chest        -> Claim Chest "GroupChest"
+-- + AA1: จำสถานะสวิตช์ และ Auto-run ตั้งแต่โหลด UI ไม่ต้องกดปุ่ม Home
+
+local TweenService      = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+------------------------------------------------------------------------
+-- THEME + HELPERS (Model A V1)
+------------------------------------------------------------------------
+local THEME = {
+    GREEN = Color3.fromRGB(25,255,125),
+    RED   = Color3.fromRGB(255,40,40),
+    WHITE = Color3.fromRGB(255,255,255),
+    BLACK = Color3.fromRGB(0,0,0),
+}
+
+local function corner(ui, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 12)
+    c.Parent = ui
+end
+
+local function stroke(ui, th, col)
+    local s = Instance.new("UIStroke")
+    s.Thickness = th or 2.2
+    s.Color = col or THEME.GREEN
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = ui
+end
+
+local function tween(o, p, d)
+    TweenService:Create(
+        o,
+        TweenInfo.new(d or 0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        p
+    ):Play()
+end
+
+------------------------------------------------------------------------
+-- AA1 SAVE (HomeAutoClaim) • ใช้ getgenv().UFOX_SAVE
+------------------------------------------------------------------------
+local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+    get = function(_, _, d) return d end,
+    set = function() end,
+}
+
+local GAME_ID  = tonumber(game.GameId)  or 0
+local PLACE_ID = tonumber(game.PlaceId) or 0
+
+-- AA1/HomeAutoClaim/<GAME>/<PLACE>/AutoEgg / DailyChest / GroupChest
+local BASE_SCOPE = ("AA1/HomeAutoClaim/%d/%d"):format(GAME_ID, PLACE_ID)
+
+local function K(field)
+    return BASE_SCOPE .. "/" .. field
+end
+
+local function SaveGet(field, default)
+    local ok, v = pcall(function()
+        return SAVE.get(K(field), default)
+    end)
+    return ok and v or default
+end
+
+local function SaveSet(field, value)
+    pcall(function()
+        SAVE.set(K(field), value)
+    end)
+end
+
+local STATE = {
+    AutoEgg      = SaveGet("AutoEgg",      false),
+    AutoDaily    = SaveGet("AutoDaily",    false),
+    AutoGroup    = SaveGet("AutoGroup",    false),
+}
+
+------------------------------------------------------------------------
+-- REMOTES
+------------------------------------------------------------------------
+local function getRemoteFunction()
+    local ok, rf = pcall(function()
+        local paper   = ReplicatedStorage:WaitForChild("Paper")
+        local remotes = paper:WaitForChild("Remotes")
+        return remotes:WaitForChild("__remotefunction")
+    end)
+    if not ok then
+        warn("[UFO HUB X • HomeAutoClaim] cannot get __remotefunction:", rf)
+        return nil
+    end
+    return rf
+end
+
+-- Aura Egg: Claim Time Reward + ใช้ Aura Egg 1 ใบ
+local function claimAuraEggOnce()
+    local rf = getRemoteFunction()
+    if not rf then return end
+
+    local ok1, err1 = pcall(function()
+        rf:InvokeServer("Claim Time Reward")
+    end)
+    if not ok1 then
+        warn("[UFO HUB X • HomeAutoClaim] Claim Time Reward error:", err1)
+    end
+
+    task.wait(0.5)
+
+    local ok2, err2 = pcall(function()
+        rf:InvokeServer("Use Item", "Aura Egg", 1)
+    end)
+    if not ok2 then
+        warn("[UFO HUB X • HomeAutoClaim] Use Aura Egg error:", err2)
+    end
+end
+
+local function claimDailyChestOnce()
+    local rf = getRemoteFunction()
+    if not rf then return end
+    local ok, err = pcall(function()
+        rf:InvokeServer("Claim Chest", "DailyChest")
+    end)
+    if not ok then
+        warn("[UFO HUB X • HomeAutoClaim] Claim DailyChest error:", err)
+    end
+end
+
+local function claimGroupChestOnce()
+    local rf = getRemoteFunction()
+    if not rf then return end
+    local ok, err = pcall(function()
+        rf:InvokeServer("Claim Chest", "GroupChest")
+    end)
+    if not ok then
+        warn("[UFO HUB X • HomeAutoClaim] Claim GroupChest error:", err)
+    end
+end
+
+------------------------------------------------------------------------
+-- LOOP FLAGS
+------------------------------------------------------------------------
+local AUTO_EGG_INTERVAL   = 15 * 60   -- 15 นาที
+local AUTO_CHEST_INTERVAL = 60        -- 60 วิ; เซิร์ฟจะกัน cooldown เอง
+
+local eggOn       = STATE.AutoEgg
+local dailyOn     = STATE.AutoDaily
+local groupOn     = STATE.AutoGroup
+
+local eggLoopRunning   = false
+local dailyLoopRunning = false
+local groupLoopRunning = false
+
+local function ensureEggLoop()
+    if eggLoopRunning then return end
+    eggLoopRunning = true
+    task.spawn(function()
+        while eggOn do
+            claimAuraEggOnce()
+            local startT = tick()
+            while eggOn and (tick() - startT) < AUTO_EGG_INTERVAL do
+                task.wait(0.5)
+            end
+        end
+        eggLoopRunning = false
+    end)
+end
+
+local function ensureDailyLoop()
+    if dailyLoopRunning then return end
+    dailyLoopRunning = true
+    task.spawn(function()
+        while dailyOn do
+            claimDailyChestOnce()
+            local startT = tick()
+            while dailyOn and (tick() - startT) < AUTO_CHEST_INTERVAL do
+                task.wait(0.5)
+            end
+        end
+        dailyLoopRunning = false
+    end)
+end
+
+local function ensureGroupLoop()
+    if groupLoopRunning then return end
+    groupLoopRunning = true
+    task.spawn(function()
+        while groupOn do
+            claimGroupChestOnce()
+            local startT = tick()
+            while groupOn and (tick() - startT) < AUTO_CHEST_INTERVAL do
+                task.wait(0.5)
+            end
+        end
+        groupLoopRunning = false
+    end)
+end
+
+------------------------------------------------------------------------
+-- AA1 AUTO-RUN: เริ่มลูปทันทีตอนโหลดสคริปต์ (ไม่ต้องกด Home)
+------------------------------------------------------------------------
+task.defer(function()
+    if eggOn   then ensureEggLoop()   end
+    if dailyOn then ensureDailyLoop() end
+    if groupOn then ensureGroupLoop() end
+end)
+
+------------------------------------------------------------------------
+-- UI ฝั่งขวา (Model A V1) • Tab: Home
+------------------------------------------------------------------------
+registerRight("Home", function(scroll)
+    --------------------------------------------------------------------
+    -- UIListLayout (Model A V1: หนึ่ง layout + base จากของเดิม)
+    --------------------------------------------------------------------
+    local vlist = scroll:FindFirstChildOfClass("UIListLayout")
+    if not vlist then
+        vlist = Instance.new("UIListLayout")
+        vlist.Parent = scroll
+        vlist.Padding   = UDim.new(0, 12)
+        vlist.SortOrder = Enum.SortOrder.LayoutOrder
+    end
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+    local base = 0
+    for _, ch in ipairs(scroll:GetChildren()) do
+        if ch:IsA("GuiObject") and ch ~= vlist then
+            base = math.max(base, ch.LayoutOrder or 0)
+        end
+    end
+
+    --------------------------------------------------------------------
+    -- HEADER: Auto Claim Rewards 🎁
+    --------------------------------------------------------------------
+    local header = Instance.new("TextLabel")
+    header.Name = "A1_Home_AutoClaim_Header"
+    header.Parent = scroll
+    header.BackgroundTransparency = 1
+    header.Size = UDim2.new(1, 0, 0, 36)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 16
+    header.TextColor3 = THEME.WHITE
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Text = "》》》Auto Claim Rewards 🎁《《《"
+    header.LayoutOrder = base + 1
+
+    --------------------------------------------------------------------
+    -- สวิตช์สไตล์ Model A V1
+    --------------------------------------------------------------------
+    local function makeRowSwitch(name, order, labelText, onToggle)
+        local row = Instance.new("Frame")
+        row.Name = name
+        row.Parent = scroll
+        row.Size = UDim2.new(1, -6, 0, 46)
+        row.BackgroundColor3 = THEME.BLACK
+        corner(row, 12)
+        stroke(row, 2.2, THEME.GREEN)
+        row.LayoutOrder = order
+
+        -- Label ซ้าย
+        local lab = Instance.new("TextLabel")
+        lab.Parent = row
+        lab.BackgroundTransparency = 1
+        lab.Size = UDim2.new(1, -160, 1, 0)
+        lab.Position = UDim2.new(0, 16, 0, 0)
+        lab.Font = Enum.Font.GothamBold
+        lab.TextSize = 13
+        lab.TextColor3 = THEME.WHITE
+        lab.TextXAlignment = Enum.TextXAlignment.Left
+        lab.Text = labelText
+
+        -- กล่องสวิตช์ขวา
+        local sw = Instance.new("Frame")
+        sw.Parent = row
+        sw.AnchorPoint = Vector2.new(1,0.5)
+        sw.Position = UDim2.new(1, -12, 0.5, 0)
+        sw.Size = UDim2.fromOffset(52,26)
+        sw.BackgroundColor3 = THEME.BLACK
+        corner(sw, 13)
+
+        local swStroke = Instance.new("UIStroke")
+        swStroke.Parent = sw
+        swStroke.Thickness = 1.8
+
+        local knob = Instance.new("Frame")
+        knob.Parent = sw
+        knob.Size = UDim2.fromOffset(22,22)
+        knob.BackgroundColor3 = THEME.WHITE
+        knob.Position = UDim2.new(0,2,0.5,-11)
+        corner(knob,11)
+
+        local currentOn = false
+
+        local function updateVisual(on)
+            currentOn = on
+            swStroke.Color = on and THEME.GREEN or THEME.RED
+            tween(knob, {
+                Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)
+            }, 0.08)
+        end
+
+        local function setState(on, fireCallback)
+            fireCallback = (fireCallback ~= false)
+            if currentOn == on then return end
+            updateVisual(on)
+            if fireCallback and onToggle then
+                onToggle(on)
+            end
+        end
+
+        local btn = Instance.new("TextButton")
+        btn.Parent = sw
+        btn.BackgroundTransparency = 1
+        btn.Size = UDim2.fromScale(1,1)
+        btn.Text = ""
+        btn.AutoButtonColor = false
+        btn.MouseButton1Click:Connect(function()
+            setState(not currentOn, true)
+        end)
+
+        -- เริ่มต้นปิด (เดี๋ยวค่อย sync จาก STATE ทีหลัง)
+        updateVisual(false)
+
+        return {
+            row      = row,
+            setState = setState,
+            getState = function() return currentOn end,
+        }
+    end
+
+    --------------------------------------------------------------------
+    -- Row1: Auto Claim Aura Egg (15 min)
+    --------------------------------------------------------------------
+    local rowEgg = makeRowSwitch(
+        "A1_Home_AutoClaim_AuraEgg",
+        base + 2,
+        "Auto Claim Aura Egg (every 15 minutes)",
+        function(state)
+            eggOn = state
+            SaveSet("AutoEgg", state)
+            if state then
+                ensureEggLoop()
+            end
+        end
+    )
+
+    --------------------------------------------------------------------
+    -- Row2: Auto Claim Daily Chest
+    --------------------------------------------------------------------
+    local rowDaily = makeRowSwitch(
+        "A1_Home_AutoClaim_DailyChest",
+        base + 3,
+        "Auto Claim Daily Chest",
+        function(state)
+            dailyOn = state
+            SaveSet("AutoDaily", state)
+            if state then
+                ensureDailyLoop()
+            end
+        end
+    )
+
+    --------------------------------------------------------------------
+    -- Row3: Auto Claim Group Chest
+    --------------------------------------------------------------------
+    local rowGroup = makeRowSwitch(
+        "A1_Home_AutoClaim_GroupChest",
+        base + 4,
+        "Auto Claim Group Chest",
+        function(state)
+            groupOn = state
+            SaveSet("AutoGroup", state)
+            if state then
+                ensureGroupLoop()
+            end
+        end
+    )
+
+    --------------------------------------------------------------------
+    -- SYNC UI จาก STATE (AA1) ตอนเปิดแท็บ Home
+    --------------------------------------------------------------------
+    task.defer(function()
+        if eggOn and rowEgg then
+            rowEgg.setState(true, false)
+        end
+        if dailyOn and rowDaily then
+            rowDaily.setState(true, false)
+        end
+        if groupOn and rowGroup then
+            rowGroup.setState(true, false)
+        end
+    end)
+end)
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
 -- Tab: Shop
 -- Header: Auto Sell 💰
