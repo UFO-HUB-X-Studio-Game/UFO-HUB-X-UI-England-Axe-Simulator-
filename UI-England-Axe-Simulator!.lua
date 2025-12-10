@@ -6502,10 +6502,10 @@ task.defer(function()
     plasticMode(plastic)
 end)
 -- ===== UFO HUB X • Settings — AFK 💤 (MODEL A LEGACY, full systems) + Runner Save + AA1 =====
--- 1) Black Screen (Performance AFK)                  [toggle]
--- 2) White Screen (Performance AFK)                  [toggle]
--- 3) AFK Anti-Kick (1 min • 3 clicks at screen)     [toggle default ON]
--- 4) Activity Watcher (1 min → enable #3)           [toggle default ON]
+-- 1) Black Screen (Performance AFK)  [toggle]
+-- 2) White Screen (Performance AFK)  [toggle]
+-- 3) AFK Anti-Kick (20 min)          [toggle default ON]
+-- 4) Activity Watcher (5 min → enable #3) [toggle default ON]
 -- + AA1: Auto-run จาก SaveState โดยตรง ไม่ต้องแตะ UI
 
 -- ########## SERVICES ##########
@@ -6606,11 +6606,11 @@ end
 
 -- ########## GLOBAL AFK STATE ##########
 _G.UFOX_AFK = _G.UFOX_AFK or {
-    blackOn      = false,
-    whiteOn      = false,
-    antiIdleOn   = true,   -- default ON
-    watcherOn    = true,   -- default ON
-    lastInput    = tick(),
+    blackOn    = false,
+    whiteOn    = false,
+    antiIdleOn = true,   -- default ON
+    watcherOn  = true,   -- default ON
+    lastInput  = tick(),
     antiIdleLoop = nil,
     idleHooked   = false,
     gui          = nil,
@@ -6689,46 +6689,30 @@ local function syncOverlays()
 end
 
 -- ########## CORE: Anti-Kick / Activity ##########
-
--- คลิก "กลางหน้าจอ" แบบ Click ซ้ายจริง ๆ 1 ครั้ง
 local function pulseOnce()
     local cam = workspace.CurrentCamera
     local cf  = cam and cam.CFrame or CFrame.new()
-    local vp  = cam and cam.ViewportSize or Vector2.new(0,0)
-    local pos = Vector2.new(vp.X/2, vp.Y/2)
-
     pcall(function()
         VirtualUser:CaptureController()
-        VirtualUser:ClickButton1(pos, cf)
+        VirtualUser:ClickButton2(Vector2.new(0,0), cf)
     end)
 end
 
--- Anti-Kick: วนลูป 1 นาที → คลิก 3 ครั้ง → 1 นาที → คลิก 3 ครั้ง → ...
 local function startAntiIdle()
     if S.antiIdleLoop then return end
     S.antiIdleLoop = task.spawn(function()
         while S.antiIdleOn do
-            -- เริ่มรอบใหม่: จำเวลาเริ่ม
-            local cycleStart = tick()
-
-            -- คลิกกลางจอ 3 ครั้งติดกัน (หน่วงเล็กน้อยให้ดูเหมือนคนคลิกจริง)
-            for i = 1, 3 do
+            pulseOnce()
+            for i=1,540 do  -- ~9 นาที (ตรงกับค่าเดิม)
                 if not S.antiIdleOn then break end
-                pulseOnce()
-                task.wait(0.3)
+                task.wait(1)
             end
-
-            -- รอให้ครบ 1 นาที (60 วินาที) จาก cycleStart
-            while S.antiIdleOn and (tick() - cycleStart) < 60 do
-                task.wait(0.5)
-            end
-            -- แล้วก็วน while S.antiIdleOn อีกรอบ
         end
         S.antiIdleLoop = nil
     end)
 end
 
--- hook Roblox Idle แค่ครั้งเดียว (global)
+-- hook Roblox Idle แค่ครั้งเดียว (เหมือนเดิม แต่ global)
 if not S.idleHooked then
     S.idleHooked = true
     lp.Idled:Connect(function()
@@ -6750,20 +6734,16 @@ local function ensureInputHooks()
     end))
 end
 
--- 1 นาทีไม่ขยับ = inactive
-local INACTIVE = 60
+local INACTIVE = 5*60 -- 5 นาที
 local function startWatcher()
     if S.watcherConn then return end
     S.watcherConn = RunService.Heartbeat:Connect(function()
         if not S.watcherOn then return end
         if tick() - S.lastInput >= INACTIVE then
-            -- ไม่ขยับ 1 นาที → เปิด Anti-Kick (#3) ถ้ายังไม่เปิด แล้วปล่อยให้ loop จัดการต่อ
+            -- เปิด Anti-Kick อัตโนมัติ (เหมือนเดิม)
             S.antiIdleOn = true
             setSave("Settings.AFK.AntiKick", true)
-            if not S.antiIdleLoop then
-                startAntiIdle()
-            end
-            -- pulseOnce เพิ่ม 1 ครั้งตอนนี้
+            if not S.antiIdleLoop then startAntiIdle() end
             pulseOnce()
             S.lastInput = tick()
         end
@@ -6772,12 +6752,15 @@ end
 
 -- ########## AA1: AUTO-RUN จาก SaveState (ไม่ต้องแตะ UI) ##########
 task.defer(function()
+    -- sync หน้าจอ AFK (black/white) ตามค่าที่เซฟไว้
     syncOverlays()
 
+    -- ถ้า Anti-Kick ON → start loop ให้เลย
     if S.antiIdleOn then
         startAntiIdle()
     end
 
+    -- watcher & input hooks (ดูการขยับทุก 5 นาทีเหมือนเดิม)
     ensureInputHooks()
     startWatcher()
 end)
@@ -6810,10 +6793,10 @@ registerRight("Settings", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.TEXT
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "》》》AFK 💤《《《"
+    header.Text = "AFK 💤"
     header.LayoutOrder = nextOrder
 
-    -- Row helper
+    -- Row helper (เหมือนโค้ดเดิม)
     local function makeRow(textLabel, defaultOn, onToggle)
         local row = Instance.new("Frame", scroll)
         row.Size = UDim2.new(1,-6,0,46)
@@ -6869,7 +6852,7 @@ registerRight("Settings", function(scroll)
         return setState
     end
 
-    -- ===== Rows + bindings =====
+    -- ===== Rows + bindings (ใช้ STATE เดิม + SAVE + CORE) =====
     local setBlack = makeRow("Black Screen (Performance AFK)", S.blackOn, function(v)
         S.blackOn = v
         if v then S.whiteOn = false end
@@ -6890,7 +6873,7 @@ registerRight("Settings", function(scroll)
         end
     end)
 
-    local setAnti  = makeRow("AFK Anti-Kick (1 min • 3 clicks)", S.antiIdleOn, function(v)
+    local setAnti  = makeRow("AFK Anti-Kick (20 min)", S.antiIdleOn, function(v)
         S.antiIdleOn = v
         setSave("Settings.AFK.AntiKick", v)
         if v then
@@ -6898,7 +6881,7 @@ registerRight("Settings", function(scroll)
         end
     end)
 
-    local setWatch = makeRow("Activity Watcher (1 min → enable #3)", S.watcherOn, function(v)
+    local setWatch = makeRow("Activity Watcher (5 min → enable #3)", S.watcherOn, function(v)
         S.watcherOn = v
         setSave("Settings.AFK.Watcher", v)
         -- watcher loop จะเช็ค S.watcherOn อยู่แล้ว
