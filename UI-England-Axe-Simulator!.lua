@@ -5125,11 +5125,184 @@ end)
 -- Header: Auto Buy Pickaxe & Miners ⛏️
 -- Row1: Auto Buy Pickaxe -> "Buy Pickaxe"
 -- Row2: Auto Buy Miners  -> "Buy Miner"
--- มีระบบเซฟ AA1: เปิดไว้ครั้งก่อน จะ Auto ทำงานต่อเมื่อโหลด UI
+-- AA1:
+--   • ถ้าเคยเปิด Auto ไว้ก่อนหน้า → ตอนรันสคริปต์หลัก จะ Auto ทำงานทันที
+--   • ไม่ต้องกดปุ่ม Shop ก่อน ระบบก็ทำงานได้
+
+----------------------------------------------------------------------
+-- AA1 RUNNER (ไม่มี UI, ทำงานทันทีตอนรันสคริปต์)
+----------------------------------------------------------------------
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    ------------------------------------------------------------------
+    -- SAVE (AA1) ใช้ getgenv().UFOX_SAVE
+    ------------------------------------------------------------------
+    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+        get = function(_, _, d) return d end,
+        set = function() end,
+    }
+
+    local GAME_ID  = tonumber(game.GameId)  or 0
+    local PLACE_ID = tonumber(game.PlaceId) or 0
+
+    -- AA1/ShopAutoBuy/<GAME>/<PLACE>/AutoPickaxe / AutoMiners
+    local BASE_SCOPE = ("AA1/ShopAutoBuy/%d/%d"):format(GAME_ID, PLACE_ID)
+
+    local function K(field)
+        return BASE_SCOPE .. "/" .. field
+    end
+
+    local function SaveGet(field, default)
+        local ok, v = pcall(function()
+            return SAVE.get(K(field), default)
+        end)
+        return ok and v or default
+    end
+
+    local function SaveSet(field, value)
+        pcall(function()
+            SAVE.set(K(field), value)
+        end)
+    end
+
+    ------------------------------------------------------------------
+    -- STATE จาก AA1
+    ------------------------------------------------------------------
+    local STATE = {
+        AutoPickaxe = SaveGet("AutoPickaxe", false),
+        AutoMiners  = SaveGet("AutoMiners",  false),
+    }
+
+    ------------------------------------------------------------------
+    -- REMOTES: Buy Pickaxe / Buy Miner
+    ------------------------------------------------------------------
+    local function getRemoteFunction()
+        local ok, rf = pcall(function()
+            local paper   = ReplicatedStorage:WaitForChild("Paper")
+            local remotes = paper:WaitForChild("Remotes")
+            return remotes:WaitForChild("__remotefunction")
+        end)
+        if not ok then
+            warn("[UFO HUB X • AutoBuy AA1] cannot get __remotefunction")
+            return nil
+        end
+        return rf
+    end
+
+    local function buyPickaxeOnce()
+        local rf = getRemoteFunction()
+        if not rf then return end
+        local args = { "Buy Pickaxe" }
+        local ok, err = pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+        if not ok then
+            warn("[UFO HUB X • AutoBuy AA1] Buy Pickaxe error:", err)
+        end
+    end
+
+    local function buyMinerOnce()
+        local rf = getRemoteFunction()
+        if not rf then return end
+        local args = { "Buy Miner" }
+        local ok, err = pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+        if not ok then
+            warn("[UFO HUB X • AutoBuy AA1] Buy Miner error:", err)
+        end
+    end
+
+    ------------------------------------------------------------------
+    -- LOOP FLAGS (ฝั่ง AA1)
+    ------------------------------------------------------------------
+    local AUTO_INTERVAL = 5 -- วินาทีต่อ 1 ครั้ง
+
+    local pickaxeLoopRunning = false
+    local minerLoopRunning   = false
+
+    local function ensurePickaxeLoop()
+        if pickaxeLoopRunning then return end
+        pickaxeLoopRunning = true
+        task.spawn(function()
+            while STATE.AutoPickaxe do
+                buyPickaxeOnce()
+                for i = 1, AUTO_INTERVAL * 10 do
+                    if not STATE.AutoPickaxe then break end
+                    task.wait(0.1)
+                end
+            end
+            pickaxeLoopRunning = false
+        end)
+    end
+
+    local function ensureMinerLoop()
+        if minerLoopRunning then return end
+        minerLoopRunning = true
+        task.spawn(function()
+            while STATE.AutoMiners do
+                buyMinerOnce()
+                for i = 1, AUTO_INTERVAL * 10 do
+                    if not STATE.AutoMiners then break end
+                    task.wait(0.1)
+                end
+            end
+            minerLoopRunning = false
+        end)
+    end
+
+    local function applyFromState()
+        if STATE.AutoPickaxe then
+            ensurePickaxeLoop()
+        end
+        if STATE.AutoMiners then
+       	    ensureMinerLoop()
+        end
+    end
+
+    ------------------------------------------------------------------
+    -- EXPORT AA1 + AUTO-RUN ตอนโหลดสคริปต์หลัก
+    ------------------------------------------------------------------
+    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
+    _G.UFOX_AA1["ShopAutoBuy"] = {
+        state = STATE,
+        apply = applyFromState,
+
+        setPickaxe = function(on)
+            on = on and true or false
+            STATE.AutoPickaxe = on
+            SaveSet("AutoPickaxe", on)
+            if on then
+                ensurePickaxeLoop()
+            end
+        end,
+
+        setMiners = function(on)
+            on = on and true or false
+            STATE.AutoMiners = on
+            SaveSet("AutoMiners", on)
+            if on then
+                ensureMinerLoop()
+            end
+        end,
+
+        saveGet = SaveGet,
+        saveSet = SaveSet,
+    }
+
+    -- ถ้าเคยเปิด Auto ไว้ → รันเลย (ไม่ต้องกด Shop)
+    task.defer(function()
+        applyFromState()
+    end)
+end
+
+----------------------------------------------------------------------
+-- UI PART: Model A V1 ใน Tab Shop (แค่คุม STATE ของ AA1)
+----------------------------------------------------------------------
 
 registerRight("Shop", function(scroll)
-    local TweenService      = game:GetService("TweenService")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local TweenService = game:GetService("TweenService")
 
     ------------------------------------------------------------------------
     -- THEME + HELPERS (Model A V1)
@@ -5164,120 +5337,13 @@ registerRight("Shop", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- AA1 SAVE (ShopAutoBuy) • ใช้ getgenv().UFOX_SAVE
+    -- ดึง STATE จาก AA1
     ------------------------------------------------------------------------
-    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
-        get = function(_, _, d) return d end,
-        set = function() end,
+    local AA1   = _G.UFOX_AA1 and _G.UFOX_AA1["ShopAutoBuy"]
+    local STATE = (AA1 and AA1.state) or {
+        AutoPickaxe = false,
+        AutoMiners  = false,
     }
-
-    local GAME_ID  = tonumber(game.GameId)  or 0
-    local PLACE_ID = tonumber(game.PlaceId) or 0
-
-    -- AA1/ShopAutoBuy/<GAME>/<PLACE>/AutoPickaxe / AutoMiners
-    local BASE_SCOPE = ("AA1/ShopAutoBuy/%d/%d"):format(GAME_ID, PLACE_ID)
-
-    local function K(field)
-        return BASE_SCOPE .. "/" .. field
-    end
-
-    local function SaveGet(field, default)
-        local ok, v = pcall(function()
-            return SAVE.get(K(field), default)
-        end)
-        return ok and v or default
-    end
-
-    local function SaveSet(field, value)
-        pcall(function()
-            SAVE.set(K(field), value)
-        end)
-    end
-
-    local STATE = {
-        AutoPickaxe = SaveGet("AutoPickaxe", false),
-        AutoMiners  = SaveGet("AutoMiners",  false),
-    }
-
-    ------------------------------------------------------------------------
-    -- REMOTES: Buy Pickaxe / Buy Miner
-    ------------------------------------------------------------------------
-    local function getRemoteFunction()
-        local ok, rf = pcall(function()
-            local paper   = ReplicatedStorage:WaitForChild("Paper")
-            local remotes = paper:WaitForChild("Remotes")
-            return remotes:WaitForChild("__remotefunction")
-        end)
-        if not ok then
-            warn("[UFO HUB X • AutoBuy] cannot get __remotefunction:", rf)
-            return nil
-        end
-        return rf
-    end
-
-    local function buyPickaxeOnce()
-        local rf = getRemoteFunction()
-        if not rf then return end
-        local args = { "Buy Pickaxe" }
-        local ok, err = pcall(function()
-            rf:InvokeServer(unpack(args))
-        end)
-        if not ok then
-            warn("[UFO HUB X • AutoBuy] Buy Pickaxe error:", err)
-        end
-    end
-
-    local function buyMinerOnce()
-        local rf = getRemoteFunction()
-        if not rf then return end
-        local args = { "Buy Miner" }
-        local ok, err = pcall(function()
-            rf:InvokeServer(unpack(args))
-        end)
-        if not ok then
-            warn("[UFO HUB X • AutoBuy] Buy Miner error:", err)
-        end
-    end
-
-    ------------------------------------------------------------------------
-    -- LOOP FLAGS
-    ------------------------------------------------------------------------
-    local AUTO_INTERVAL = 5 -- วินาทีต่อ 1 ครั้ง
-
-    local autoPickaxeOn      = STATE.AutoPickaxe
-    local autoMinerOn        = STATE.AutoMiners
-    local pickaxeLoopRunning = false
-    local minerLoopRunning   = false
-
-    local function ensurePickaxeLoop()
-        if pickaxeLoopRunning then return end
-        pickaxeLoopRunning = true
-        task.spawn(function()
-            while autoPickaxeOn do
-                buyPickaxeOnce()
-                for i = 1, AUTO_INTERVAL * 10 do
-                    if not autoPickaxeOn then break end
-                    task.wait(0.1)
-                end
-            end
-            pickaxeLoopRunning = false
-        end)
-    end
-
-    local function ensureMinerLoop()
-        if minerLoopRunning then return end
-        minerLoopRunning = true
-        task.spawn(function()
-            while autoMinerOn do
-                buyMinerOnce()
-                for i = 1, AUTO_INTERVAL * 10 do
-                    if not autoMinerOn then break end
-                    task.wait(0.1)
-                end
-            end
-            minerLoopRunning = false
-        end)
-    end
 
     ------------------------------------------------------------------------
     -- UIListLayout (Model A V1 rule: 1 layout + base จากของเดิม)
@@ -5316,7 +5382,7 @@ registerRight("Shop", function(scroll)
     ------------------------------------------------------------------------
     -- สวิตช์สไตล์ Model A V1
     ------------------------------------------------------------------------
-    local function makeRowSwitch(name, order, labelText, onToggle)
+    local function makeRowSwitch(name, order, labelText, initialOn, onToggle)
         local row = Instance.new("Frame")
         row.Name = name
         row.Parent = scroll
@@ -5358,7 +5424,7 @@ registerRight("Shop", function(scroll)
         knob.Position = UDim2.new(0,2,0.5,-11)
         corner(knob,11)
 
-        local currentOn = false
+        local currentOn = initialOn and true or false
 
         local function updateVisual(on)
             currentOn = on
@@ -5387,8 +5453,8 @@ registerRight("Shop", function(scroll)
             setState(not currentOn, true)
         end)
 
-        -- เริ่มต้นปิด (เดี๋ยวค่อย sync จาก STATE ทีหลัง)
-        updateVisual(false)
+        -- initial
+        updateVisual(currentOn)
 
         return {
             row      = row,
@@ -5398,54 +5464,41 @@ registerRight("Shop", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Row1: Auto Buy Pickaxe (มีเซฟ AA1)
+    -- Row1: Auto Buy Pickaxe (เรียก AA1.setPickaxe)
     ------------------------------------------------------------------------
     local rowPickaxe = makeRowSwitch(
         "A1_Shop_AutoBuy_Pickaxe",
         base + 2,
         "Auto Buy Pickaxe",
+        STATE.AutoPickaxe,
         function(state)
-            autoPickaxeOn = state
-            SaveSet("AutoPickaxe", state)
-            if state then
-                ensurePickaxeLoop()
+            if AA1 and AA1.setPickaxe then
+                AA1.setPickaxe(state)
             end
         end
     )
 
     ------------------------------------------------------------------------
-    -- Row2: Auto Buy Miners (มีเซฟ AA1)
+    -- Row2: Auto Buy Miners (เรียก AA1.setMiners)
     ------------------------------------------------------------------------
     local rowMiner = makeRowSwitch(
         "A1_Shop_AutoBuy_Miners",
         base + 3,
         "Auto Buy Miners",
+        STATE.AutoMiners,
         function(state)
-            autoMinerOn = state
-            SaveSet("AutoMiners", state)
-            if state then
-                ensureMinerLoop()
+            if AA1 and AA1.setMiners then
+                AA1.setMiners(state)
             end
         end
     )
 
     ------------------------------------------------------------------------
-    -- AA1 AUTO-RUN: Sync UI + Loop จาก STATE ตอนโหลด
+    -- Sync UI จาก STATE ที่เซฟไว้ (ตอนเปิด Tab Shop)
     ------------------------------------------------------------------------
     task.defer(function()
-        -- Sync Flag จาก Save
-        autoPickaxeOn = STATE.AutoPickaxe
-        autoMinerOn   = STATE.AutoMiners
-
-        if autoPickaxeOn and rowPickaxe then
-            rowPickaxe.setState(true, false) -- อัปเดต UI อย่างเดียว
-            ensurePickaxeLoop()
-        end
-
-        if autoMinerOn and rowMiner then
-            rowMiner.setState(true, false)
-            ensureMinerLoop()
-        end
+        rowPickaxe.setState(STATE.AutoPickaxe, false)
+        rowMiner.setState(STATE.AutoMiners,   false)
     end)
 end)
 -- ===== UFO HUB X • Update Tab — Map Update 🗺️ =====
@@ -6449,10 +6502,10 @@ task.defer(function()
     plasticMode(plastic)
 end)
 -- ===== UFO HUB X • Settings — AFK 💤 (MODEL A LEGACY, full systems) + Runner Save + AA1 =====
--- 1) Black Screen (Performance AFK)  [toggle]
--- 2) White Screen (Performance AFK)  [toggle]
--- 3) AFK Anti-Kick (20 min)          [toggle default ON]
--- 4) Activity Watcher (5 min → enable #3) [toggle default ON]
+-- 1) Black Screen (Performance AFK)                  [toggle]
+-- 2) White Screen (Performance AFK)                  [toggle]
+-- 3) AFK Anti-Kick (1 min • 3 clicks at screen)     [toggle default ON]
+-- 4) Activity Watcher (1 min → enable #3)           [toggle default ON]
 -- + AA1: Auto-run จาก SaveState โดยตรง ไม่ต้องแตะ UI
 
 -- ########## SERVICES ##########
@@ -6553,11 +6606,11 @@ end
 
 -- ########## GLOBAL AFK STATE ##########
 _G.UFOX_AFK = _G.UFOX_AFK or {
-    blackOn    = false,
-    whiteOn    = false,
-    antiIdleOn = true,   -- default ON
-    watcherOn  = true,   -- default ON
-    lastInput  = tick(),
+    blackOn      = false,
+    whiteOn      = false,
+    antiIdleOn   = true,   -- default ON
+    watcherOn    = true,   -- default ON
+    lastInput    = tick(),
     antiIdleLoop = nil,
     idleHooked   = false,
     gui          = nil,
@@ -6636,30 +6689,46 @@ local function syncOverlays()
 end
 
 -- ########## CORE: Anti-Kick / Activity ##########
+
+-- คลิก "กลางหน้าจอ" แบบ Click ซ้ายจริง ๆ 1 ครั้ง
 local function pulseOnce()
     local cam = workspace.CurrentCamera
     local cf  = cam and cam.CFrame or CFrame.new()
+    local vp  = cam and cam.ViewportSize or Vector2.new(0,0)
+    local pos = Vector2.new(vp.X/2, vp.Y/2)
+
     pcall(function()
         VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new(0,0), cf)
+        VirtualUser:ClickButton1(pos, cf)
     end)
 end
 
+-- Anti-Kick: วนลูป 1 นาที → คลิก 3 ครั้ง → 1 นาที → คลิก 3 ครั้ง → ...
 local function startAntiIdle()
     if S.antiIdleLoop then return end
     S.antiIdleLoop = task.spawn(function()
         while S.antiIdleOn do
-            pulseOnce()
-            for i=1,540 do  -- ~9 นาที (ตรงกับค่าเดิม)
+            -- เริ่มรอบใหม่: จำเวลาเริ่ม
+            local cycleStart = tick()
+
+            -- คลิกกลางจอ 3 ครั้งติดกัน (หน่วงเล็กน้อยให้ดูเหมือนคนคลิกจริง)
+            for i = 1, 3 do
                 if not S.antiIdleOn then break end
-                task.wait(1)
+                pulseOnce()
+                task.wait(0.3)
             end
+
+            -- รอให้ครบ 1 นาที (60 วินาที) จาก cycleStart
+            while S.antiIdleOn and (tick() - cycleStart) < 60 do
+                task.wait(0.5)
+            end
+            -- แล้วก็วน while S.antiIdleOn อีกรอบ
         end
         S.antiIdleLoop = nil
     end)
 end
 
--- hook Roblox Idle แค่ครั้งเดียว (เหมือนเดิม แต่ global)
+-- hook Roblox Idle แค่ครั้งเดียว (global)
 if not S.idleHooked then
     S.idleHooked = true
     lp.Idled:Connect(function()
@@ -6681,16 +6750,20 @@ local function ensureInputHooks()
     end))
 end
 
-local INACTIVE = 5*60 -- 5 นาที
+-- 1 นาทีไม่ขยับ = inactive
+local INACTIVE = 60
 local function startWatcher()
     if S.watcherConn then return end
     S.watcherConn = RunService.Heartbeat:Connect(function()
         if not S.watcherOn then return end
         if tick() - S.lastInput >= INACTIVE then
-            -- เปิด Anti-Kick อัตโนมัติ (เหมือนเดิม)
+            -- ไม่ขยับ 1 นาที → เปิด Anti-Kick (#3) ถ้ายังไม่เปิด แล้วปล่อยให้ loop จัดการต่อ
             S.antiIdleOn = true
             setSave("Settings.AFK.AntiKick", true)
-            if not S.antiIdleLoop then startAntiIdle() end
+            if not S.antiIdleLoop then
+                startAntiIdle()
+            end
+            -- pulseOnce เพิ่ม 1 ครั้งตอนนี้
             pulseOnce()
             S.lastInput = tick()
         end
@@ -6699,15 +6772,12 @@ end
 
 -- ########## AA1: AUTO-RUN จาก SaveState (ไม่ต้องแตะ UI) ##########
 task.defer(function()
-    -- sync หน้าจอ AFK (black/white) ตามค่าที่เซฟไว้
     syncOverlays()
 
-    -- ถ้า Anti-Kick ON → start loop ให้เลย
     if S.antiIdleOn then
         startAntiIdle()
     end
 
-    -- watcher & input hooks (ดูการขยับทุก 5 นาทีเหมือนเดิม)
     ensureInputHooks()
     startWatcher()
 end)
@@ -6743,7 +6813,7 @@ registerRight("Settings", function(scroll)
     header.Text = "》》》AFK 💤《《《"
     header.LayoutOrder = nextOrder
 
-    -- Row helper (เหมือนโค้ดเดิม)
+    -- Row helper
     local function makeRow(textLabel, defaultOn, onToggle)
         local row = Instance.new("Frame", scroll)
         row.Size = UDim2.new(1,-6,0,46)
@@ -6799,7 +6869,7 @@ registerRight("Settings", function(scroll)
         return setState
     end
 
-    -- ===== Rows + bindings (ใช้ STATE เดิม + SAVE + CORE) =====
+    -- ===== Rows + bindings =====
     local setBlack = makeRow("Black Screen (Performance AFK)", S.blackOn, function(v)
         S.blackOn = v
         if v then S.whiteOn = false end
@@ -6820,7 +6890,7 @@ registerRight("Settings", function(scroll)
         end
     end)
 
-    local setAnti  = makeRow("AFK Anti-Kick (20 min)", S.antiIdleOn, function(v)
+    local setAnti  = makeRow("AFK Anti-Kick (1 min • 3 clicks)", S.antiIdleOn, function(v)
         S.antiIdleOn = v
         setSave("Settings.AFK.AntiKick", v)
         if v then
@@ -6828,7 +6898,7 @@ registerRight("Settings", function(scroll)
         end
     end)
 
-    local setWatch = makeRow("Activity Watcher (5 min → enable #3)", S.watcherOn, function(v)
+    local setWatch = makeRow("Activity Watcher (1 min → enable #3)", S.watcherOn, function(v)
         S.watcherOn = v
         setSave("Settings.AFK.Watcher", v)
         -- watcher loop จะเช็ค S.watcherOn อยู่แล้ว
