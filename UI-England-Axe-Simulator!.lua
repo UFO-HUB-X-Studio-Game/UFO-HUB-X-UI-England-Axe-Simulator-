@@ -4799,13 +4799,14 @@ registerRight("Home", function(scroll)
         autoRebirthRow.setState(STATE.Enabled, false)
     end)
 end) 
---===== UFO HUB X • Home – Auto Claim Rewards 🎁 (Model A V1 + AA1) =====
+--===== UFO HUB X • Home – Auto Claim Rewards 🎁 (Model A V1 + AA1 • PERMA LOOPS) =====
 -- Tab: Home
 -- Header: Auto Claim Rewards 🎁
 -- Row1: Auto Claim Aura Egg (15 min)  -> Claim Time Reward + Use Aura Egg
 -- Row2: Auto Claim Daily Chest        -> Claim Chest "DailyChest"
 -- Row3: Auto Claim Group Chest        -> Claim Chest "GroupChest"
 -- + AA1: จำสถานะสวิตช์ และ Auto-run ตั้งแต่โหลด UI ไม่ต้องกดปุ่ม Home
+-- + ใช้ลูปถาวร 3 ตัว คอยเช็ค flag แล้ววนลูปให้เอง
 
 local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -4853,7 +4854,7 @@ local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
 local GAME_ID  = tonumber(game.GameId)  or 0
 local PLACE_ID = tonumber(game.PlaceId) or 0
 
--- AA1/HomeAutoClaim/<GAME>/<PLACE>/AutoEgg / DailyChest / GroupChest
+-- AA1/HomeAutoClaim/<GAME>/<PLACE>/AutoEgg / AutoDaily / AutoGroup
 local BASE_SCOPE = ("AA1/HomeAutoClaim/%d/%d"):format(GAME_ID, PLACE_ID)
 
 local function K(field)
@@ -4874,9 +4875,9 @@ local function SaveSet(field, value)
 end
 
 local STATE = {
-    AutoEgg      = SaveGet("AutoEgg",      false),
-    AutoDaily    = SaveGet("AutoDaily",    false),
-    AutoGroup    = SaveGet("AutoGroup",    false),
+    AutoEgg   = SaveGet("AutoEgg",   false),
+    AutoDaily = SaveGet("AutoDaily", false),
+    AutoGroup = SaveGet("AutoGroup", false),
 }
 
 ------------------------------------------------------------------------
@@ -4940,72 +4941,57 @@ local function claimGroupChestOnce()
 end
 
 ------------------------------------------------------------------------
--- LOOP FLAGS
+-- LOOP FLAGS + PERMA LOOPS
 ------------------------------------------------------------------------
 local AUTO_EGG_INTERVAL   = 15 * 60   -- 15 นาที
-local AUTO_CHEST_INTERVAL = 60        -- 60 วิ; เซิร์ฟจะกัน cooldown เอง
+local AUTO_CHEST_INTERVAL = 60        -- 60 วิ (ปล่อยให้เซิร์ฟกันคูลดาวน์เอง)
 
-local eggOn       = STATE.AutoEgg
-local dailyOn     = STATE.AutoDaily
-local groupOn     = STATE.AutoGroup
+local eggOn   = STATE.AutoEgg
+local dailyOn = STATE.AutoDaily
+local groupOn = STATE.AutoGroup
 
-local eggLoopRunning   = false
-local dailyLoopRunning = false
-local groupLoopRunning = false
-
-local function ensureEggLoop()
-    if eggLoopRunning then return end
-    eggLoopRunning = true
-    task.spawn(function()
-        while eggOn do
+-- ลูปถาวรสำหรับ Aura Egg
+task.spawn(function()
+    local last = 0
+    while true do
+        if eggOn and (tick() - last) >= AUTO_EGG_INTERVAL then
+            last = tick()
             claimAuraEggOnce()
-            local startT = tick()
-            while eggOn and (tick() - startT) < AUTO_EGG_INTERVAL do
-                task.wait(0.5)
-            end
         end
-        eggLoopRunning = false
-    end)
-end
-
-local function ensureDailyLoop()
-    if dailyLoopRunning then return end
-    dailyLoopRunning = true
-    task.spawn(function()
-        while dailyOn do
-            claimDailyChestOnce()
-            local startT = tick()
-            while dailyOn and (tick() - startT) < AUTO_CHEST_INTERVAL do
-                task.wait(0.5)
-            end
-        end
-        dailyLoopRunning = false
-    end)
-end
-
-local function ensureGroupLoop()
-    if groupLoopRunning then return end
-    groupLoopRunning = true
-    task.spawn(function()
-        while groupOn do
-            claimGroupChestOnce()
-            local startT = tick()
-            while groupOn and (tick() - startT) < AUTO_CHEST_INTERVAL do
-                task.wait(0.5)
-            end
-        end
-        groupLoopRunning = false
-    end)
-end
-
-------------------------------------------------------------------------
--- AA1 AUTO-RUN: เริ่มลูปทันทีตอนโหลดสคริปต์ (ไม่ต้องกด Home)
-------------------------------------------------------------------------
-task.defer(function()
-    if eggOn   then ensureEggLoop()   end
-    if dailyOn then ensureDailyLoop() end
-    if groupOn then ensureGroupLoop() end
+        task.wait(0.5)
+    end
 end)
+
+-- ลูปถาวรสำหรับ Daily Chest
+task.spawn(function()
+    local last = 0
+    while true do
+        if dailyOn and (tick() - last) >= AUTO_CHEST_INTERVAL then
+            last = tick()
+            claimDailyChestOnce()
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- ลูปถาวรสำหรับ Group Chest
+task.spawn(function()
+    local last = 0
+    while true do
+        if groupOn and (tick() - last) >= AUTO_CHEST_INTERVAL then
+            last = tick()
+            claimGroupChestOnce()
+        end
+        task.wait(0.5)
+    end
+end)
+
+------------------------------------------------------------------------
+-- (AA1) โหลดเสร็จ → ใช้ค่าสถานะที่เซฟไว้เลย
+------------------------------------------------------------------------
+-- แค่มี STATE.+ลูปข้างบนก็พอแล้ว ไม่ต้องทำอะไรเพิ่ม
+-- ถ้าสวิตช์ถูกเปิดครั้งก่อน (Save = true) eggOn/dailyOn/groupOn จะ true ตั้งแต่ต้น
+-- ลูปจะเริ่มทำงานทันที ไม่ต้องกดปุ่ม Home
 
 ------------------------------------------------------------------------
 -- UI ฝั่งขวา (Model A V1) • Tab: Home
@@ -5139,9 +5125,6 @@ registerRight("Home", function(scroll)
         function(state)
             eggOn = state
             SaveSet("AutoEgg", state)
-            if state then
-                ensureEggLoop()
-            end
         end
     )
 
@@ -5155,9 +5138,6 @@ registerRight("Home", function(scroll)
         function(state)
             dailyOn = state
             SaveSet("AutoDaily", state)
-            if state then
-                ensureDailyLoop()
-            end
         end
     )
 
@@ -5171,9 +5151,6 @@ registerRight("Home", function(scroll)
         function(state)
             groupOn = state
             SaveSet("AutoGroup", state)
-            if state then
-                ensureGroupLoop()
-            end
         end
     )
 
@@ -5181,15 +5158,9 @@ registerRight("Home", function(scroll)
     -- SYNC UI จาก STATE (AA1) ตอนเปิดแท็บ Home
     --------------------------------------------------------------------
     task.defer(function()
-        if eggOn and rowEgg then
-            rowEgg.setState(true, false)
-        end
-        if dailyOn and rowDaily then
-            rowDaily.setState(true, false)
-        end
-        if groupOn and rowGroup then
-            rowGroup.setState(true, false)
-        end
+        if eggOn   and rowEgg   then rowEgg.setState(true,   false) end
+        if dailyOn and rowDaily then rowDaily.setState(true, false) end
+        if groupOn and rowGroup then rowGroup.setState(true, false) end
     end)
 end)
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
