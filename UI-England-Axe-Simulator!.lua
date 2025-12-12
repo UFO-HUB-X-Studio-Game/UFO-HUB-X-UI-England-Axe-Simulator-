@@ -4815,9 +4815,11 @@ end)
 --===== UFO HUB X • Home – Auto Claim Rewards 🎁 (Model A V1 + AA1 • PERMA LOOPS) =====
 -- Tab: Home
 -- Header: Auto Claim Rewards 🎁
--- Row1: Auto Claim Aura Egg (SPAM LOOP)  -> Claim Time Reward + Use Aura Egg (วนเรื่อยๆ ไม่รอ 15 นาที)
--- Row2: Auto Claim Daily Chest           -> Claim Chest "DailyChest"
--- Row3: Auto Claim Group Chest           -> Claim Chest "GroupChest"
+-- Row1: Auto Claim Aura Egg (SPAM LOOP)      -> Claim Time Reward + Use Aura Egg
+-- Row2: Auto Claim Daily Chest               -> Claim Chest "DailyChest"
+-- Row3: Auto Claim Group Chest               -> Claim Chest "GroupChest"
+-- Row4: Auto Claim Daily Reward              -> Claim Daily
+-- Row5: Auto Claim Index Reward              -> Claim Index Reward
 -- + AA1: จำสถานะสวิตช์ และ Auto-run ตั้งแต่โหลด UI ไม่ต้องกดปุ่ม Home
 
 local TweenService      = game:GetService("TweenService")
@@ -4886,9 +4888,11 @@ local function SaveSet(field, value)
 end
 
 local STATE = {
-    AutoEgg   = SaveGet("AutoEgg",   false),
-    AutoDaily = SaveGet("AutoDaily", false),
-    AutoGroup = SaveGet("AutoGroup", false),
+    AutoEgg       = SaveGet("AutoEgg",       false),
+    AutoDaily     = SaveGet("AutoDaily",     false),
+    AutoGroup     = SaveGet("AutoGroup",     false),
+    AutoDailyRw   = SaveGet("AutoDailyRw",   false), -- Row4
+    AutoIndexRw   = SaveGet("AutoIndexRw",   false), -- Row5
 }
 
 ------------------------------------------------------------------------
@@ -4950,17 +4954,46 @@ local function claimGroupChestOnce()
     end
 end
 
+-- Row4
+local function claimDailyRewardOnce()
+    local rf = getRemoteFunction()
+    if not rf then return end
+    local ok, err = pcall(function()
+        rf:InvokeServer("Claim Daily")
+    end)
+    if not ok then
+        warn("[UFO HUB X • HomeAutoClaim] Claim Daily error:", err)
+    end
+end
+
+-- Row5
+local function claimIndexRewardOnce()
+    local rf = getRemoteFunction()
+    if not rf then return end
+    local ok, err = pcall(function()
+        rf:InvokeServer("Claim Index Reward")
+    end)
+    if not ok then
+        warn("[UFO HUB X • HomeAutoClaim] Claim Index Reward error:", err)
+    end
+end
+
 ------------------------------------------------------------------------
 -- LOOP FLAGS + PERMA LOOPS
 ------------------------------------------------------------------------
-local AUTO_CHEST_INTERVAL = 60        -- Chest ให้ห่างหน่อย (เซิร์ฟกันคูลดาวน์เอง)
-local EGG_SPAM_DELAY      = 0.8       -- <<<<< รายการที่ 1: วนเรื่อยๆ แต่หน่วงกันสแปมจนหลุด
+local AUTO_CHEST_INTERVAL = 60
 
-local eggOn   = STATE.AutoEgg
-local dailyOn = STATE.AutoDaily
-local groupOn = STATE.AutoGroup
+local EGG_SPAM_DELAY        = 0.8
+local DAILY_REWARD_SPAM     = 1.2
+local INDEX_REWARD_SPAM     = 1.2
 
--- Row1: Aura Egg (วนเรื่อยๆ ไม่รอ 15 นาที)
+local eggOn       = STATE.AutoEgg
+local dailyOn     = STATE.AutoDaily
+local groupOn     = STATE.AutoGroup
+local dailyRwOn   = STATE.AutoDailyRw
+local indexRwOn   = STATE.AutoIndexRw
+
+-- Row1: Aura Egg (วนเรื่อยๆ)
 task.spawn(function()
     while true do
         if eggOn then
@@ -4972,7 +5005,7 @@ task.spawn(function()
     end
 end)
 
--- Row2: Daily Chest
+-- Row2: Daily Chest (กันคูลดาวน์)
 task.spawn(function()
     local last = 0
     while true do
@@ -4984,7 +5017,7 @@ task.spawn(function()
     end
 end)
 
--- Row3: Group Chest
+-- Row3: Group Chest (กันคูลดาวน์)
 task.spawn(function()
     local last = 0
     while true do
@@ -4993,6 +5026,30 @@ task.spawn(function()
             claimGroupChestOnce()
         end
         task.wait(0.5)
+    end
+end)
+
+-- Row4: Claim Daily (วนเรื่อยๆ)
+task.spawn(function()
+    while true do
+        if dailyRwOn then
+            claimDailyRewardOnce()
+            task.wait(DAILY_REWARD_SPAM)
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- Row5: Claim Index Reward (วนเรื่อยๆ)
+task.spawn(function()
+    while true do
+        if indexRwOn then
+            claimIndexRewardOnce()
+            task.wait(INDEX_REWARD_SPAM)
+        else
+            task.wait(0.5)
+        end
     end
 end)
 
@@ -5097,22 +5154,20 @@ registerRight("Home", function(scroll)
 
         updateVisual(false)
 
-        return {
-            setState = setState,
-        }
+        return { setState = setState }
     end
 
-    local rowEgg = makeRowSwitch(
+    local row1 = makeRowSwitch(
         "A1_Home_AutoClaim_AuraEgg",
         base + 2,
-        "Auto Claim Aura Egg",
+        "Auto Claim Aura Egg (non-stop loop)",
         function(state)
             eggOn = state
             SaveSet("AutoEgg", state)
         end
     )
 
-    local rowDaily = makeRowSwitch(
+    local row2 = makeRowSwitch(
         "A1_Home_AutoClaim_DailyChest",
         base + 3,
         "Auto Claim Daily Chest",
@@ -5122,7 +5177,7 @@ registerRight("Home", function(scroll)
         end
     )
 
-    local rowGroup = makeRowSwitch(
+    local row3 = makeRowSwitch(
         "A1_Home_AutoClaim_GroupChest",
         base + 4,
         "Auto Claim Group Chest",
@@ -5132,10 +5187,32 @@ registerRight("Home", function(scroll)
         end
     )
 
+    local row4 = makeRowSwitch(
+        "A1_Home_AutoClaim_DailyReward",
+        base + 5,
+        "Auto Claim Daily Reward",
+        function(state)
+            dailyRwOn = state
+            SaveSet("AutoDailyRw", state)
+        end
+    )
+
+    local row5 = makeRowSwitch(
+        "A1_Home_AutoClaim_IndexReward",
+        base + 6,
+        "Auto Claim Index Reward",
+        function(state)
+            indexRwOn = state
+            SaveSet("AutoIndexRw", state)
+        end
+    )
+
     task.defer(function()
-        if eggOn   then rowEgg.setState(true,   false) end
-        if dailyOn then rowDaily.setState(true, false) end
-        if groupOn then rowGroup.setState(true, false) end
+        if eggOn     then row1.setState(true, false) end
+        if dailyOn   then row2.setState(true, false) end
+        if groupOn   then row3.setState(true, false) end
+        if dailyRwOn then row4.setState(true, false) end
+        if indexRwOn then row5.setState(true, false) end
     end)
 end)
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
