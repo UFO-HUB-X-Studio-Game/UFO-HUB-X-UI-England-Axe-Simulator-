@@ -2232,6 +2232,598 @@ registerRight("Home", function(scroll)
         if indexRwOn then row5.setState(true, false) end
     end)
 end)
+--===== UFO HUB X • Quest – Upgrades Auto ⚡ (Model A V1 + Model A V2 Overlay + AA1) =====
+-- Tab: Quest
+-- Row1 (A V1 Switch): Enable Upgrades Auto  -> เปิด/ปิดระบบ (รายการที่ 2 ทำงาน)
+-- Row2 (A V2 Overlay): Select Upgrades (11 buttons, multi-select, click again = cancel)
+-- AA1: Auto-run from SaveState on UI load (no need to click Quest)
+
+----------------------------------------------------------------------
+-- SERVICES
+----------------------------------------------------------------------
+local Players           = game:GetService("Players")
+local TweenService      = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService  = game:GetService("UserInputService")
+
+local lp = Players.LocalPlayer
+
+----------------------------------------------------------------------
+-- AA1 SAVE (uses getgenv().UFOX_SAVE)
+----------------------------------------------------------------------
+local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+    get = function(_, _, d) return d end,
+    set = function() end,
+}
+
+local GAME_ID  = tonumber(game.GameId)  or 0
+local PLACE_ID = tonumber(game.PlaceId) or 0
+local BASE     = ("AA1/QuestUpgradesAuto/%d/%d"):format(GAME_ID, PLACE_ID)
+
+local function K(field) return BASE .. "/" .. field end
+
+local function SaveGet(field, default)
+    local ok, v = pcall(function()
+        return SAVE.get(K(field), default)
+    end)
+    return ok and v or default
+end
+
+local function SaveSet(field, value)
+    pcall(function()
+        SAVE.set(K(field), value)
+    end)
+end
+
+----------------------------------------------------------------------
+-- REMOTE
+----------------------------------------------------------------------
+local function getRF()
+    local ok, rf = pcall(function()
+        local paper = ReplicatedStorage:WaitForChild("Paper")
+        local rem   = paper:WaitForChild("Remotes")
+        return rem:WaitForChild("__remotefunction")
+    end)
+    if not ok then
+        warn("[UFO HUB X • UpgradesAuto] cannot get __remotefunction:", rf)
+        return nil
+    end
+    return rf
+end
+
+----------------------------------------------------------------------
+-- UPGRADE LIST (11)
+----------------------------------------------------------------------
+local UPGRADE_NAMES = {
+    "More Gems",
+    "More Rebirths",
+    "More Coins",
+    "More Damage",
+    "Egg Luck",
+    "Hatch Speed",
+    "Pets Equipped",
+    "Inventory Space",
+    "Rainbow Chance",
+    "Golden Chance",
+    "Walk Speed",
+}
+
+----------------------------------------------------------------------
+-- STATE (AA1)
+----------------------------------------------------------------------
+_G.UFOX_AA1 = _G.UFOX_AA1 or {}
+_G.UFOX_AA1["QuestUpgradesAuto"] = _G.UFOX_AA1["QuestUpgradesAuto"] or {}
+
+local SYS = _G.UFOX_AA1["QuestUpgradesAuto"]
+
+SYS.STATE = SYS.STATE or {
+    Enabled  = SaveGet("Enabled", false),
+    Selected = SaveGet("Selected", {}), -- table: {["More Gems"]=true, ...}
+}
+
+local STATE = SYS.STATE
+
+-- sanitize Selected
+if type(STATE.Selected) ~= "table" then STATE.Selected = {} end
+for k,v in pairs(STATE.Selected) do
+    if v ~= true then STATE.Selected[k] = nil end
+end
+
+----------------------------------------------------------------------
+-- RUNNER (PERMA LOOP)
+----------------------------------------------------------------------
+local UPGRADE_DELAY = 0.35 -- กันสแปม/กันเด้ง (ปรับได้)
+
+local function doUpgradeOnce(name)
+    local rf = getRF()
+    if not rf then return end
+    local args = { "Upgrade", name }
+    local ok, err = pcall(function()
+        rf:InvokeServer(unpack(args))
+    end)
+    if not ok then
+        -- ถ้าไม่ทำงาน เกมอาจเช็คเงิน/เงื่อนไข/คูลดาวน์
+        warn("[UFO HUB X • UpgradesAuto] Upgrade error ("..tostring(name).."):", err)
+    end
+end
+
+local runnerStarted = false
+local function ensureRunner()
+    if runnerStarted then return end
+    runnerStarted = true
+
+    task.spawn(function()
+        while true do
+            if STATE.Enabled then
+                -- วนเฉพาะที่เลือกไว้
+                for _,name in ipairs(UPGRADE_NAMES) do
+                    if not STATE.Enabled then break end
+                    if STATE.Selected[name] == true then
+                        doUpgradeOnce(name)
+                        task.wait(UPGRADE_DELAY)
+                    end
+                end
+                task.wait(0.15)
+            else
+                task.wait(0.25)
+            end
+        end
+    end)
+end
+
+local function setEnabled(v)
+    v = v and true or false
+    STATE.Enabled = v
+    SaveSet("Enabled", v)
+end
+
+local function setSelected(name, v)
+    if v then
+        STATE.Selected[name] = true
+    else
+        STATE.Selected[name] = nil
+    end
+    SaveSet("Selected", STATE.Selected)
+end
+
+SYS.setEnabled  = setEnabled
+SYS.setSelected = setSelected
+SYS.getEnabled  = function() return STATE.Enabled end
+SYS.getSelected = function(name) return STATE.Selected[name] == true end
+
+-- AUTO-RUN from AA1 (no need to click Quest)
+task.defer(function()
+    ensureRunner()
+end)
+
+----------------------------------------------------------------------
+-- UI (Quest) — Model A V1 + Model A V2 Overlay
+----------------------------------------------------------------------
+registerRight("Quest", function(scroll)
+
+    ------------------------------------------------------------------
+    -- THEME + HELPERS (Model A V1)
+    ------------------------------------------------------------------
+    local THEME = {
+        GREEN = Color3.fromRGB(25,255,125),
+        RED   = Color3.fromRGB(255,40,40),
+        WHITE = Color3.fromRGB(255,255,255),
+        BLACK = Color3.fromRGB(0,0,0),
+    }
+
+    local function corner(ui, r)
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, r or 12)
+        c.Parent = ui
+    end
+
+    local function stroke(ui, th, col)
+        local s = Instance.new("UIStroke")
+        s.Thickness = th or 2.2
+        s.Color = col or THEME.GREEN
+        s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        s.Parent = ui
+        return s
+    end
+
+    local function tween(o, p, d)
+        TweenService:Create(
+            o,
+            TweenInfo.new(d or 0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            p
+        ):Play()
+    end
+
+    ------------------------------------------------------------------
+    -- UIListLayout (A V1 rule: single layout + dynamic base)
+    ------------------------------------------------------------------
+    local vlist = scroll:FindFirstChildOfClass("UIListLayout")
+    if not vlist then
+        vlist = Instance.new("UIListLayout")
+        vlist.Parent = scroll
+        vlist.Padding   = UDim.new(0, 12)
+        vlist.SortOrder = Enum.SortOrder.LayoutOrder
+    end
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+    local base = 0
+    for _, ch in ipairs(scroll:GetChildren()) do
+        if ch:IsA("GuiObject") and ch ~= vlist then
+            base = math.max(base, ch.LayoutOrder or 0)
+        end
+    end
+    base = base + 1
+
+    ------------------------------------------------------------------
+    -- HEADER
+    ------------------------------------------------------------------
+    local header = Instance.new("TextLabel")
+    header.Name = "A1_Quest_UpgradesAuto_Header"
+    header.Parent = scroll
+    header.BackgroundTransparency = 1
+    header.Size = UDim2.new(1, 0, 0, 36)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 16
+    header.TextColor3 = THEME.WHITE
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Text = "》》》Upgrades Auto ⚡《《《"
+    header.LayoutOrder = base
+
+    ------------------------------------------------------------------
+    -- A V1 SWITCH ROW (Row1)
+    ------------------------------------------------------------------
+    local function makeRowSwitch(name, order, labelText, initialOn, onToggle)
+        local row = Instance.new("Frame")
+        row.Name = name
+        row.Parent = scroll
+        row.Size = UDim2.new(1, -6, 0, 46)
+        row.BackgroundColor3 = THEME.BLACK
+        corner(row, 12)
+        stroke(row, 2.2, THEME.GREEN)
+        row.LayoutOrder = order
+
+        local lab = Instance.new("TextLabel")
+        lab.Parent = row
+        lab.BackgroundTransparency = 1
+        lab.Size = UDim2.new(1, -160, 1, 0)
+        lab.Position = UDim2.new(0, 16, 0, 0)
+        lab.Font = Enum.Font.GothamBold
+        lab.TextSize = 13
+        lab.TextColor3 = THEME.WHITE
+        lab.TextXAlignment = Enum.TextXAlignment.Left
+        lab.Text = labelText
+
+        local sw = Instance.new("Frame")
+        sw.Parent = row
+        sw.AnchorPoint = Vector2.new(1,0.5)
+        sw.Position = UDim2.new(1, -12, 0.5, 0)
+        sw.Size = UDim2.fromOffset(52,26)
+        sw.BackgroundColor3 = THEME.BLACK
+        corner(sw, 13)
+
+        local swStroke = Instance.new("UIStroke")
+        swStroke.Parent = sw
+        swStroke.Thickness = 1.8
+
+        local knob = Instance.new("Frame")
+        knob.Parent = sw
+        knob.Size = UDim2.fromOffset(22,22)
+        knob.BackgroundColor3 = THEME.WHITE
+        corner(knob,11)
+
+        local currentOn = initialOn and true or false
+
+        local function updateVisual(on)
+            currentOn = on
+            swStroke.Color = on and THEME.GREEN or THEME.RED
+            tween(knob, { Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11) }, 0.08)
+        end
+
+        local function setState(on, fireCallback)
+            fireCallback = (fireCallback ~= false)
+            if currentOn == on then return end
+            updateVisual(on)
+            if fireCallback and onToggle then onToggle(on) end
+        end
+
+        local btn = Instance.new("TextButton")
+        btn.Parent = sw
+        btn.BackgroundTransparency = 1
+        btn.Size = UDim2.fromScale(1,1)
+        btn.Text = ""
+        btn.AutoButtonColor = false
+        btn.MouseButton1Click:Connect(function()
+            setState(not currentOn, true)
+        end)
+
+        updateVisual(currentOn)
+
+        return { setState = setState, getState = function() return currentOn end }
+    end
+
+    local rowEnable = makeRowSwitch(
+        "A1_Quest_UpgradesAuto_Enable",
+        header.LayoutOrder + 1,
+        "Enable Upgrades Auto",
+        STATE.Enabled,
+        function(on)
+            SYS.setEnabled(on)
+            ensureRunner()
+        end
+    )
+
+    ------------------------------------------------------------------
+    -- Row2 (A V1 Row) : Button -> open A V2 overlay
+    ------------------------------------------------------------------
+    local rowOpen = Instance.new("Frame")
+    rowOpen.Name = "A1_Quest_UpgradesAuto_OpenOverlay"
+    rowOpen.Parent = scroll
+    rowOpen.Size = UDim2.new(1, -6, 0, 46)
+    rowOpen.BackgroundColor3 = THEME.BLACK
+    corner(rowOpen, 12)
+    stroke(rowOpen, 2.2, THEME.GREEN)
+    rowOpen.LayoutOrder = header.LayoutOrder + 2
+
+    local lab2 = Instance.new("TextLabel")
+    lab2.Parent = rowOpen
+    lab2.BackgroundTransparency = 1
+    lab2.Size = UDim2.new(1, -160, 1, 0)
+    lab2.Position = UDim2.new(0, 16, 0, 0)
+    lab2.Font = Enum.Font.GothamBold
+    lab2.TextSize = 13
+    lab2.TextColor3 = THEME.WHITE
+    lab2.TextXAlignment = Enum.TextXAlignment.Left
+    lab2.Text = "Select Upgrades (A V2 Panel)"
+
+    local openBtn = Instance.new("TextButton")
+    openBtn.Parent = rowOpen
+    openBtn.AnchorPoint = Vector2.new(1,0.5)
+    openBtn.Position = UDim2.new(1, -12, 0.5, 0)
+    openBtn.Size = UDim2.fromOffset(140, 30)
+    openBtn.BackgroundColor3 = THEME.BLACK
+    openBtn.Text = "Select Options"
+    openBtn.Font = Enum.Font.GothamBold
+    openBtn.TextSize = 13
+    openBtn.TextColor3 = THEME.WHITE
+    openBtn.AutoButtonColor = false
+    corner(openBtn, 10)
+    local openStroke = stroke(openBtn, 2.2, THEME.GREEN)
+
+    ------------------------------------------------------------------
+    -- MODEL A V2 OVERLAY (100% behavior: toggle, outside-click close, search, 11 buttons, 2 FX)
+    ------------------------------------------------------------------
+    local container = scroll.Parent  -- right panel container
+    local overlayName = "UFOX_Quest_UpgradesOverlay_A2"
+
+    local overlay, panel, list, searchBox
+    local isOpen = false
+    local inputConn
+
+    local function destroyOverlay()
+        if inputConn then inputConn:Disconnect(); inputConn=nil end
+        if overlay then overlay:Destroy(); overlay=nil end
+        panel=nil; list=nil; searchBox=nil
+        isOpen = false
+        tween(openStroke, {Color = THEME.GREEN}, 0.08)
+    end
+
+    local function inside(gui, pos)
+        if not gui or not gui.Parent then return false end
+        local ap = gui.AbsolutePosition
+        local as = gui.AbsoluteSize
+        return pos.X >= ap.X and pos.X <= ap.X + as.X and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y
+    end
+
+    local function setGlow(on)
+        tween(openStroke, {Color = on and THEME.GREEN or Color3.fromRGB(0,120,60)}, 0.08)
+    end
+
+    local function mkA2Button(parent, text, order)
+        local card = Instance.new("Frame")
+        card.Parent = parent
+        card.Size = UDim2.new(1, -10, 0, 44)
+        card.BackgroundColor3 = THEME.BLACK
+        card.BorderSizePixel = 0
+        card.LayoutOrder = order
+        corner(card, 12)
+
+        local st = stroke(card, 2.2, Color3.fromRGB(0,120,60))
+
+        local bar = Instance.new("Frame")
+        bar.Parent = card
+        bar.BackgroundColor3 = THEME.GREEN
+        bar.BorderSizePixel = 0
+        bar.Size = UDim2.new(0, 4, 1, -14)
+        bar.Position = UDim2.new(0, 10, 0, 7)
+        corner(bar, 4)
+
+        local label = Instance.new("TextLabel")
+        label.Parent = card
+        label.BackgroundTransparency = 1
+        label.Position = UDim2.new(0, 22, 0, 0)
+        label.Size = UDim2.new(1, -34, 1, 0)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 13
+        label.TextColor3 = THEME.WHITE
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Text = text
+
+        local btn = Instance.new("TextButton")
+        btn.Parent = card
+        btn.BackgroundTransparency = 1
+        btn.Size = UDim2.fromScale(1,1)
+        btn.Text = ""
+        btn.AutoButtonColor = false
+
+        local function setSelected(on)
+            tween(st, {Color = on and THEME.GREEN or Color3.fromRGB(0,120,60)}, 0.08)
+            bar.BackgroundTransparency = on and 0 or 0.35
+        end
+
+        return card, btn, setSelected
+    end
+
+    local btnMap = {} -- name -> {card, setSelected}
+
+    local function refreshFilter()
+        if not list then return end
+        local q = ""
+        if searchBox and searchBox.Text then
+            q = searchBox.Text:lower():gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+        end
+
+        for _,name in ipairs(UPGRADE_NAMES) do
+            local item = btnMap[name]
+            if item and item.card then
+                if q == "" then
+                    item.card.Visible = true
+                else
+                    item.card.Visible = (name:lower():find(q, 1, true) ~= nil)
+                end
+            end
+        end
+
+        task.defer(function()
+            if list then
+                local layout = list:FindFirstChildOfClass("UIListLayout")
+                if layout then
+                    list.CanvasPosition = Vector2.new(0, 0)
+                    list.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 10)
+                end
+            end
+        end)
+    end
+
+    local function buildOverlay()
+        if overlay and overlay.Parent then return end
+
+        overlay = Instance.new("Frame")
+        overlay.Name = overlayName
+        overlay.Parent = container
+        overlay.BackgroundTransparency = 1
+        overlay.Size = UDim2.fromScale(1,1)
+        overlay.ZIndex = 500
+
+        panel = Instance.new("Frame")
+        panel.Parent = overlay
+        panel.AnchorPoint = Vector2.new(1, 0.5)
+        panel.Position = UDim2.new(1, -8, 0.5, 0)
+        panel.Size = UDim2.new(0, 300, 1, -16)
+        panel.BackgroundColor3 = THEME.BLACK
+        panel.BorderSizePixel = 0
+        panel.ZIndex = 510
+        corner(panel, 14)
+        local panelStroke = stroke(panel, 2.2, THEME.GREEN)
+        panelStroke.Parent = panel
+        panelStroke.ZIndex = 511
+
+        local title = Instance.new("TextLabel")
+        title.Parent = panel
+        title.BackgroundTransparency = 1
+        title.Position = UDim2.new(0, 14, 0, 10)
+        title.Size = UDim2.new(1, -28, 0, 22)
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 14
+        title.TextColor3 = THEME.WHITE
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.Text = "Upgrades Auto ⚡ (Select Multiple)"
+        title.ZIndex = 520
+
+        searchBox = Instance.new("TextBox")
+        searchBox.Parent = panel
+        searchBox.Position = UDim2.new(0, 14, 0, 40)
+        searchBox.Size = UDim2.new(1, -28, 0, 30)
+        searchBox.BackgroundColor3 = THEME.BLACK
+        searchBox.BorderSizePixel = 0
+        searchBox.Font = Enum.Font.GothamBold
+        searchBox.TextSize = 13
+        searchBox.TextColor3 = THEME.WHITE
+        searchBox.PlaceholderText = "Search upgrade..."
+        searchBox.PlaceholderColor3 = Color3.fromRGB(180,180,180)
+        searchBox.ClearTextOnFocus = false
+        searchBox.ZIndex = 520
+        corner(searchBox, 10)
+        local sbStroke = stroke(searchBox, 2.0, Color3.fromRGB(0,120,60))
+        sbStroke.Parent = searchBox
+        sbStroke.ZIndex = 521
+
+        list = Instance.new("ScrollingFrame")
+        list.Parent = panel
+        list.Position = UDim2.new(0, 10, 0, 80)
+        list.Size = UDim2.new(1, -20, 1, -92)
+        list.BackgroundTransparency = 1
+        list.BorderSizePixel = 0
+        list.ScrollBarThickness = 0
+        list.ScrollingDirection = Enum.ScrollingDirection.Y
+        list.CanvasPosition = Vector2.new(0,0)
+        list.ZIndex = 520
+
+        local lay = Instance.new("UIListLayout")
+        lay.Parent = list
+        lay.Padding = UDim.new(0, 10)
+        lay.SortOrder = Enum.SortOrder.LayoutOrder
+
+        -- create 11 buttons
+        table.clear(btnMap)
+        for i,name in ipairs(UPGRADE_NAMES) do
+            local card, btn, setSelected = mkA2Button(list, name, i)
+            card.ZIndex = 520
+            btn.ZIndex = 521
+            btnMap[name] = {card = card, set = setSelected}
+
+            -- init selection
+            setSelected(STATE.Selected[name] == true)
+
+            btn.MouseButton1Click:Connect(function()
+                local now = not (STATE.Selected[name] == true)
+                SYS.setSelected(name, now)
+                btnMap[name].set(now)
+            end)
+        end
+
+        -- search
+        searchBox:GetPropertyChangedSignal("Text"):Connect(refreshFilter)
+
+        -- canvas update
+        task.defer(function()
+            list.CanvasSize = UDim2.new(0,0,0,lay.AbsoluteContentSize.Y + 10)
+        end)
+
+        -- click outside close
+        inputConn = UserInputService.InputBegan:Connect(function(io, gp)
+            if gp then return end
+            if not isOpen then return end
+            local t = io.UserInputType
+            if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+            local pos = UserInputService:GetMouseLocation()
+            if not inside(panel, pos) and not inside(openBtn, pos) then
+                destroyOverlay()
+            end
+        end)
+
+        refreshFilter()
+    end
+
+    local function toggleOverlay()
+        if isOpen then
+            destroyOverlay()
+            return
+        end
+        buildOverlay()
+        isOpen = true
+        setGlow(true)
+    end
+
+    openBtn.MouseButton1Click:Connect(toggleOverlay)
+
+    ------------------------------------------------------------------
+    -- SYNC (AA1) visual init
+    ------------------------------------------------------------------
+    task.defer(function()
+        rowEnable.setState(STATE.Enabled, false)
+        ensureRunner()
+    end)
+end)
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
 -- Tab: Shop
 -- Header: Auto Sell 💰
