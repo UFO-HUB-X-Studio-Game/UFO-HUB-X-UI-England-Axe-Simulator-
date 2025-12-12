@@ -5975,7 +5975,6 @@ registerRight("Shop", function(scroll)
         rowAura.setState(STATE_AUR.AutoAura,      false)
     end)
 end)
-```0
 -- ===== UFO HUB X • Update Tab — Map Update 🗺️ =====
 registerRight("Update", function(scroll)
     local Players = game:GetService("Players")
