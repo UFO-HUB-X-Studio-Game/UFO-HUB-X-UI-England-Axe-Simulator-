@@ -5536,11 +5536,12 @@ registerRight("Shop", function(scroll)
         end
     end)
 end)
---===== UFO HUB X • Shop – Auto Buy Pickaxe & Miners (Model A V1 + AA1) =====
+--===== UFO HUB X • Shop – Auto Buy Pickaxe & Miners + Auto Buy Auras 🔥 (Model A V1 + AA1) =====
 -- Tab: Shop
 -- Header: Auto Buy Pickaxe & Miners ⛏️
 -- Row1: Auto Buy Pickaxe -> "Buy Pickaxe"
 -- Row2: Auto Buy Miners  -> "Buy Miner"
+-- Row3: Auto Buy Auras 🔥 -> "Buy Aura" (Plasma -> Toxic Flame -> ... -> Inferno loop)
 -- AA1:
 --   • ถ้าเคยเปิด Auto ไว้ก่อนหน้า → ตอนรันสคริปต์หลัก จะ Auto ทำงานทันที
 --   • ไม่ต้องกดปุ่ม Shop ก่อน ระบบก็ทำงานได้
@@ -5564,34 +5565,40 @@ do
 
     -- AA1/ShopAutoBuy/<GAME>/<PLACE>/AutoPickaxe / AutoMiners
     local BASE_SCOPE = ("AA1/ShopAutoBuy/%d/%d"):format(GAME_ID, PLACE_ID)
+    -- AA1/ShopAutoAura/<GAME>/<PLACE>/AutoAura
+    local BASE_AURA  = ("AA1/ShopAutoAura/%d/%d"):format(GAME_ID, PLACE_ID)
 
-    local function K(field)
-        return BASE_SCOPE .. "/" .. field
+    local function K(scope, field)
+        return scope .. "/" .. field
     end
 
-    local function SaveGet(field, default)
+    local function SaveGet(scope, field, default)
         local ok, v = pcall(function()
-            return SAVE.get(K(field), default)
+            return SAVE.get(K(scope, field), default)
         end)
         return ok and v or default
     end
 
-    local function SaveSet(field, value)
+    local function SaveSet(scope, field, value)
         pcall(function()
-            SAVE.set(K(field), value)
+            SAVE.set(K(scope, field), value)
         end)
     end
 
     ------------------------------------------------------------------
     -- STATE จาก AA1
     ------------------------------------------------------------------
-    local STATE = {
-        AutoPickaxe = SaveGet("AutoPickaxe", false),
-        AutoMiners  = SaveGet("AutoMiners",  false),
+    local STATE_BUY = {
+        AutoPickaxe = SaveGet(BASE_SCOPE, "AutoPickaxe", false),
+        AutoMiners  = SaveGet(BASE_SCOPE, "AutoMiners",  false),
+    }
+
+    local STATE_AURA = {
+        AutoAura = SaveGet(BASE_AURA, "AutoAura", false),
     }
 
     ------------------------------------------------------------------
-    -- REMOTES: Buy Pickaxe / Buy Miner
+    -- REMOTES: __remotefunction
     ------------------------------------------------------------------
     local function getRemoteFunction()
         local ok, rf = pcall(function()
@@ -5600,12 +5607,15 @@ do
             return remotes:WaitForChild("__remotefunction")
         end)
         if not ok then
-            warn("[UFO HUB X • AutoBuy AA1] cannot get __remotefunction")
+            warn("[UFO HUB X • AA1] cannot get __remotefunction")
             return nil
         end
         return rf
     end
 
+    ------------------------------------------------------------------
+    -- Buy Pickaxe / Miner
+    ------------------------------------------------------------------
     local function buyPickaxeOnce()
         local rf = getRemoteFunction()
         if not rf then return end
@@ -5631,21 +5641,60 @@ do
     end
 
     ------------------------------------------------------------------
+    -- Buy Aura (วน 10 ชื่อ)
+    ------------------------------------------------------------------
+    local AURAS = {
+        "Plasma",
+        "Toxic Flame",
+        "Fire",
+        "Water",
+        "Shine",
+        "Electric",
+        "Red",
+        "Wind",
+        "Rage",
+        "Inferno",
+    }
+
+    local auraIndex = 1
+    local function buyAuraOnce()
+        local rf = getRemoteFunction()
+        if not rf then return end
+
+        local auraName = AURAS[auraIndex] or "Plasma"
+        local args = { "Buy Aura", auraName }
+
+        local ok, err = pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+        if not ok then
+            warn("[UFO HUB X • AutoAura AA1] Buy Aura error:", err)
+        end
+
+        auraIndex += 1
+        if auraIndex > #AURAS then
+            auraIndex = 1
+        end
+    end
+
+    ------------------------------------------------------------------
     -- LOOP FLAGS (ฝั่ง AA1)
     ------------------------------------------------------------------
-    local AUTO_INTERVAL = 5 -- วินาทีต่อ 1 ครั้ง
+    local AUTO_INTERVAL = 5      -- pickaxe/miner ทุก 5 วิ
+    local AURA_DELAY    = 1.2    -- ซื้อ aura ทีละชื่อหน่วง 1.2 วิ (เสถียรกว่า spam)
 
     local pickaxeLoopRunning = false
     local minerLoopRunning   = false
+    local auraLoopRunning    = false
 
     local function ensurePickaxeLoop()
         if pickaxeLoopRunning then return end
         pickaxeLoopRunning = true
         task.spawn(function()
-            while STATE.AutoPickaxe do
+            while STATE_BUY.AutoPickaxe do
                 buyPickaxeOnce()
                 for i = 1, AUTO_INTERVAL * 10 do
-                    if not STATE.AutoPickaxe then break end
+                    if not STATE_BUY.AutoPickaxe then break end
                     task.wait(0.1)
                 end
             end
@@ -5657,10 +5706,10 @@ do
         if minerLoopRunning then return end
         minerLoopRunning = true
         task.spawn(function()
-            while STATE.AutoMiners do
+            while STATE_BUY.AutoMiners do
                 buyMinerOnce()
                 for i = 1, AUTO_INTERVAL * 10 do
-                    if not STATE.AutoMiners then break end
+                    if not STATE_BUY.AutoMiners then break end
                     task.wait(0.1)
                 end
             end
@@ -5668,43 +5717,61 @@ do
         end)
     end
 
+    local function ensureAuraLoop()
+        if auraLoopRunning then return end
+        auraLoopRunning = true
+        task.spawn(function()
+            while STATE_AURA.AutoAura do
+                buyAuraOnce()
+                for i = 1, math.floor(AURA_DELAY * 10) do
+                    if not STATE_AURA.AutoAura then break end
+                    task.wait(0.1)
+                end
+            end
+            auraLoopRunning = false
+        end)
+    end
+
     local function applyFromState()
-        if STATE.AutoPickaxe then
-            ensurePickaxeLoop()
-        end
-        if STATE.AutoMiners then
-       	    ensureMinerLoop()
-        end
+        if STATE_BUY.AutoPickaxe then ensurePickaxeLoop() end
+        if STATE_BUY.AutoMiners  then ensureMinerLoop()   end
+        if STATE_AURA.AutoAura   then ensureAuraLoop()    end
     end
 
     ------------------------------------------------------------------
     -- EXPORT AA1 + AUTO-RUN ตอนโหลดสคริปต์หลัก
     ------------------------------------------------------------------
     _G.UFOX_AA1 = _G.UFOX_AA1 or {}
+
     _G.UFOX_AA1["ShopAutoBuy"] = {
-        state = STATE,
+        state = STATE_BUY,
         apply = applyFromState,
 
         setPickaxe = function(on)
             on = on and true or false
-            STATE.AutoPickaxe = on
-            SaveSet("AutoPickaxe", on)
-            if on then
-                ensurePickaxeLoop()
-            end
+            STATE_BUY.AutoPickaxe = on
+            SaveSet(BASE_SCOPE, "AutoPickaxe", on)
+            if on then ensurePickaxeLoop() end
         end,
 
         setMiners = function(on)
             on = on and true or false
-            STATE.AutoMiners = on
-            SaveSet("AutoMiners", on)
-            if on then
-                ensureMinerLoop()
-            end
+            STATE_BUY.AutoMiners = on
+            SaveSet(BASE_SCOPE, "AutoMiners", on)
+            if on then ensureMinerLoop() end
         end,
+    }
 
-        saveGet = SaveGet,
-        saveSet = SaveSet,
+    _G.UFOX_AA1["ShopAutoAura"] = {
+        state = STATE_AURA,
+        apply = applyFromState,
+
+        setAura = function(on)
+            on = on and true or false
+            STATE_AURA.AutoAura = on
+            SaveSet(BASE_AURA, "AutoAura", on)
+            if on then ensureAuraLoop() end
+        end,
     }
 
     -- ถ้าเคยเปิด Auto ไว้ → รันเลย (ไม่ต้องกด Shop)
@@ -5714,7 +5781,7 @@ do
 end
 
 ----------------------------------------------------------------------
--- UI PART: Model A V1 ใน Tab Shop (แค่คุม STATE ของ AA1)
+-- UI PART: Model A V1 ใน Tab Shop (คุม STATE ของ AA1)
 ----------------------------------------------------------------------
 
 registerRight("Shop", function(scroll)
@@ -5755,11 +5822,11 @@ registerRight("Shop", function(scroll)
     ------------------------------------------------------------------------
     -- ดึง STATE จาก AA1
     ------------------------------------------------------------------------
-    local AA1   = _G.UFOX_AA1 and _G.UFOX_AA1["ShopAutoBuy"]
-    local STATE = (AA1 and AA1.state) or {
-        AutoPickaxe = false,
-        AutoMiners  = false,
-    }
+    local AA1_BUY   = _G.UFOX_AA1 and _G.UFOX_AA1["ShopAutoBuy"]
+    local AA1_AURA  = _G.UFOX_AA1 and _G.UFOX_AA1["ShopAutoAura"]
+
+    local STATE_BUY = (AA1_BUY and AA1_BUY.state) or { AutoPickaxe=false, AutoMiners=false }
+    local STATE_AUR = (AA1_AURA and AA1_AURA.state) or { AutoAura=false }
 
     ------------------------------------------------------------------------
     -- UIListLayout (Model A V1 rule: 1 layout + base จากของเดิม)
@@ -5808,7 +5875,6 @@ registerRight("Shop", function(scroll)
         stroke(row, 2.2, THEME.GREEN)
         row.LayoutOrder = order
 
-        -- Label ซ้าย
         local lab = Instance.new("TextLabel")
         lab.Parent = row
         lab.BackgroundTransparency = 1
@@ -5820,7 +5886,6 @@ registerRight("Shop", function(scroll)
         lab.TextXAlignment = Enum.TextXAlignment.Left
         lab.Text = labelText
 
-        -- กล่องสวิตช์ขวา
         local sw = Instance.new("Frame")
         sw.Parent = row
         sw.AnchorPoint = Vector2.new(1,0.5)
@@ -5845,18 +5910,14 @@ registerRight("Shop", function(scroll)
         local function updateVisual(on)
             currentOn = on
             swStroke.Color = on and THEME.GREEN or THEME.RED
-            tween(knob, {
-                Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)
-            }, 0.08)
+            tween(knob, { Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11) }, 0.08)
         end
 
         local function setState(on, fireCallback)
             fireCallback = (fireCallback ~= false)
             if currentOn == on then return end
             updateVisual(on)
-            if fireCallback and onToggle then
-                onToggle(on)
-            end
+            if fireCallback and onToggle then onToggle(on) end
         end
 
         local btn = Instance.new("TextButton")
@@ -5869,54 +5930,52 @@ registerRight("Shop", function(scroll)
             setState(not currentOn, true)
         end)
 
-        -- initial
         updateVisual(currentOn)
 
-        return {
-            row      = row,
-            setState = setState,
-            getState = function() return currentOn end,
-        }
+        return { setState = setState }
     end
 
-    ------------------------------------------------------------------------
-    -- Row1: Auto Buy Pickaxe (เรียก AA1.setPickaxe)
-    ------------------------------------------------------------------------
+    -- Row1: Auto Buy Pickaxe
     local rowPickaxe = makeRowSwitch(
         "A1_Shop_AutoBuy_Pickaxe",
         base + 2,
         "Auto Buy Pickaxe",
-        STATE.AutoPickaxe,
+        STATE_BUY.AutoPickaxe,
         function(state)
-            if AA1 and AA1.setPickaxe then
-                AA1.setPickaxe(state)
-            end
+            if AA1_BUY and AA1_BUY.setPickaxe then AA1_BUY.setPickaxe(state) end
         end
     )
 
-    ------------------------------------------------------------------------
-    -- Row2: Auto Buy Miners (เรียก AA1.setMiners)
-    ------------------------------------------------------------------------
+    -- Row2: Auto Buy Miners
     local rowMiner = makeRowSwitch(
         "A1_Shop_AutoBuy_Miners",
         base + 3,
         "Auto Buy Miners",
-        STATE.AutoMiners,
+        STATE_BUY.AutoMiners,
         function(state)
-            if AA1 and AA1.setMiners then
-                AA1.setMiners(state)
-            end
+            if AA1_BUY and AA1_BUY.setMiners then AA1_BUY.setMiners(state) end
         end
     )
 
-    ------------------------------------------------------------------------
+    -- Row3: Auto Buy Auras 🔥
+    local rowAura = makeRowSwitch(
+        "A1_Shop_AutoBuy_Auras",
+        base + 4,
+        "Auto Buy Auras",
+        STATE_AUR.AutoAura,
+        function(state)
+            if AA1_AURA and AA1_AURA.setAura then AA1_AURA.setAura(state) end
+        end
+    )
+
     -- Sync UI จาก STATE ที่เซฟไว้ (ตอนเปิด Tab Shop)
-    ------------------------------------------------------------------------
     task.defer(function()
-        rowPickaxe.setState(STATE.AutoPickaxe, false)
-        rowMiner.setState(STATE.AutoMiners,   false)
+        rowPickaxe.setState(STATE_BUY.AutoPickaxe, false)
+        rowMiner.setState(STATE_BUY.AutoMiners,   false)
+        rowAura.setState(STATE_AUR.AutoAura,      false)
     end)
 end)
+```0
 -- ===== UFO HUB X • Update Tab — Map Update 🗺️ =====
 registerRight("Update", function(scroll)
     local Players = game:GetService("Players")
