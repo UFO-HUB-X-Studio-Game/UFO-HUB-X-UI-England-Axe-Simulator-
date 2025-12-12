@@ -4816,8 +4816,8 @@ end)
 -- Tab: Home
 -- Header: Auto Claim Rewards 🎁
 -- Row1: Auto Claim Aura Egg (SPAM LOOP)      -> Claim Time Reward + Use Aura Egg
--- Row2: Auto Claim Daily Chest               -> Claim Chest "DailyChest"
--- Row3: Auto Claim Group Chest               -> Claim Chest "GroupChest"
+-- Row2: Auto Claim Daily Chest (PERMA LOOP)  -> Claim Chest "DailyChest"
+-- Row3: Auto Claim Group Chest (PERMA LOOP)  -> Claim Chest "GroupChest"
 -- Row4: Auto Claim Daily Reward              -> Claim Daily
 -- Row5: Auto Claim Index Reward              -> Claim Index Reward
 -- + AA1: จำสถานะสวิตช์ และ Auto-run ตั้งแต่โหลด UI ไม่ต้องกดปุ่ม Home
@@ -4981,9 +4981,9 @@ end
 ------------------------------------------------------------------------
 -- LOOP FLAGS + PERMA LOOPS
 ------------------------------------------------------------------------
-local AUTO_CHEST_INTERVAL = 60
-
 local EGG_SPAM_DELAY        = 0.8
+local DAILY_CHEST_SPAM      = 1.2
+local GROUP_CHEST_SPAM      = 1.2
 local DAILY_REWARD_SPAM     = 1.2
 local INDEX_REWARD_SPAM     = 1.2
 
@@ -5005,27 +5005,27 @@ task.spawn(function()
     end
 end)
 
--- Row2: Daily Chest (กันคูลดาวน์)
+-- Row2: Daily Chest (วนเรื่อยๆ)
 task.spawn(function()
-    local last = 0
     while true do
-        if dailyOn and (tick() - last) >= AUTO_CHEST_INTERVAL then
-            last = tick()
+        if dailyOn then
             claimDailyChestOnce()
+            task.wait(DAILY_CHEST_SPAM)
+        else
+            task.wait(0.5)
         end
-        task.wait(0.5)
     end
 end)
 
--- Row3: Group Chest (กันคูลดาวน์)
+-- Row3: Group Chest (วนเรื่อยๆ)
 task.spawn(function()
-    local last = 0
     while true do
-        if groupOn and (tick() - last) >= AUTO_CHEST_INTERVAL then
-            last = tick()
+        if groupOn then
             claimGroupChestOnce()
+            task.wait(GROUP_CHEST_SPAM)
+        else
+            task.wait(0.5)
         end
-        task.wait(0.5)
     end
 end)
 
@@ -5170,7 +5170,7 @@ registerRight("Home", function(scroll)
     local row2 = makeRowSwitch(
         "A1_Home_AutoClaim_DailyChest",
         base + 3,
-        "Auto Claim Daily Chest",
+        "Auto Claim Daily Chest (non-stop loop)",
         function(state)
             dailyOn = state
             SaveSet("AutoDaily", state)
@@ -5180,7 +5180,7 @@ registerRight("Home", function(scroll)
     local row3 = makeRowSwitch(
         "A1_Home_AutoClaim_GroupChest",
         base + 4,
-        "Auto Claim Group Chest",
+        "Auto Claim Group Chest (non-stop loop)",
         function(state)
             groupOn = state
             SaveSet("AutoGroup", state)
