@@ -1282,6 +1282,18 @@ registerRight("Home", function(scroll)
         [23] = "50B Rebirth",
         [24] = "500B Rebirth",
         [25] = "5T Rebirth",
+        [26] = "100T Rebirth",
+        [27] = "1Qd Rebirth",
+        [28] = "50Qd Rebirth",
+        [29] = "500Qd Rebirth",
+        [30] = "2.5Qn Rebirth",
+        [31] = "50Qn Rebirth",
+        [32] = "500Qn Rebirth",
+        [33] = "5Sx Rebirth",
+        [34] = "100Sx Rebirth",
+        [35] = "1Sp Rebirth",
+        [36] = "50Sp Rebirth",
+                
         -- ไม่ใส่ = ใช้ค่า default "%d Rebirth"
     }
 
