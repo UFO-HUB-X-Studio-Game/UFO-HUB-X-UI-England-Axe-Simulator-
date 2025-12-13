@@ -3653,30 +3653,35 @@ registerRight("Shop", function(scroll)
         searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
         searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        --------------------------------------------------------------------
-        -- GLOBAL CLICK CLOSE (ตามที่สั่ง)
-        -- กดตรงไหนก็ปิด ยกเว้น: panel / selectBtn / searchBox
-        --------------------------------------------------------------------
-        inputConn = UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
-            if not optionsPanel then return end
+--------------------------------------------------------------------
+-- GLOBAL CLICK CLOSE (ทั้งหน้าจอจริง)
+-- กด/แตะตรงไหนก็ปิด ยกเว้น: panel / selectBtn / searchBox
+--------------------------------------------------------------------
+inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+    if not optionsPanel then return end
 
-            local t = input.UserInputType
-            if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then
-                return
-            end
-
-            local pos = input.Position
-            local keep =
-                isInside(optionsPanel, pos)
-                or isInside(selectBtn, pos)
-                or (searchBox and isInside(searchBox, pos))
-
-            if not keep then
-                closePanel()
-            end
-        end)
+    local t = input.UserInputType
+    if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then
+        return
     end
+
+    -- สำคัญ: อย่าเช็ค gp (เพราะคลิก UI อื่น gp จะเป็น true แล้วมันไม่ปิด)
+    local pos
+    if t == Enum.UserInputType.Touch then
+        pos = input.Position
+    else
+        pos = UserInputService:GetMouseLocation()
+    end
+
+    local keep =
+        isInside(optionsPanel, pos)
+        or isInside(selectBtn, pos)
+        or (searchBox and isInside(searchBox, pos))
+
+    if not keep then
+        closePanel()
+    end
+end)
 
     -- Toggle Select Options
     selectBtn.MouseButton1Click:Connect(function()
