@@ -1252,9 +1252,6 @@ registerRight("Home", function(scroll)
 
     ------------------------------------------------------------------------
     -- CONFIG: ปรับชื่อปุ่ม Rebirth 1–36 ได้จากตรงนี้
-    -- ตัวอย่าง:
-    -- [1] = "x1 Rebirth",
-    -- [2] = "x2 Rebirth (Fast)",
     ------------------------------------------------------------------------
     local REBIRTH_LABELS = {
         [1] = "1 Rebirth",
@@ -1293,8 +1290,6 @@ registerRight("Home", function(scroll)
         [34] = "100Sx Rebirth",
         [35] = "1Sp Rebirth",
         [36] = "50Sp Rebirth",
-                
-        -- ไม่ใส่ = ใช้ค่า default "%d Rebirth"
     }
 
     local function getRebirthLabel(amount)
@@ -1358,7 +1353,6 @@ registerRight("Home", function(scroll)
         stroke(row, 2.2, THEME.GREEN)
         row.LayoutOrder = order
 
-        -- Label ซ้าย
         local lab = Instance.new("TextLabel")
         lab.Parent = row
         lab.BackgroundTransparency = 1
@@ -1370,7 +1364,6 @@ registerRight("Home", function(scroll)
         lab.TextXAlignment = Enum.TextXAlignment.Left
         lab.Text = labelText
 
-        -- กล่องสวิตช์ขวา
         local sw = Instance.new("Frame")
         sw.Parent = row
         sw.AnchorPoint = Vector2.new(1,0.5)
@@ -1395,18 +1388,14 @@ registerRight("Home", function(scroll)
         local function updateVisual(on)
             currentOn = on
             swStroke.Color = on and THEME.GREEN or THEME.RED
-            tween(knob, {
-                Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)
-            }, 0.08)
+            tween(knob, { Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11) }, 0.08)
         end
 
         local function setState(on, fireCallback)
             fireCallback = (fireCallback ~= false)
             if currentOn == on then return end
             updateVisual(on)
-            if fireCallback and onToggle then
-                onToggle(on)
-            end
+            if fireCallback and onToggle then onToggle(on) end
         end
 
         local btn = Instance.new("TextButton")
@@ -1421,15 +1410,11 @@ registerRight("Home", function(scroll)
 
         updateVisual(currentOn)
 
-        return {
-            row      = row,
-            setState = setState,
-            getState = function() return currentOn end,
-        }
+        return { row = row, setState = setState, getState = function() return currentOn end }
     end
 
     ------------------------------------------------------------------------
-    -- Row1: Auto Rebirth (สวิตช์ A V1) → เรียก AA1.setEnabled
+    -- Row1: Auto Rebirth
     ------------------------------------------------------------------------
     local autoRebirthRow = makeRowSwitch(
         "A1_Home_AutoRebirth",
@@ -1444,15 +1429,18 @@ registerRight("Home", function(scroll)
     )
 
     ------------------------------------------------------------------------
-    -- Model A V2 PART: แถว + ปุ่ม Select Options + Panel ด้านขวา
+    -- Model A V2 PART: Row + Select Options + Panel
     ------------------------------------------------------------------------
-    local panelParent = scroll.Parent  -- กรอบฝั่งขวา
+    local panelParent = scroll.Parent
     local amountPanel
     local inputConn
     local opened = false
 
-    local amountButtons = {}   -- [amt] = {button, stroke, glow}
+    local amountButtons = {}
     local allButtons    = {}
+
+    -- ✅ เก็บ ref ของปุ่ม Select เพื่อให้ closeAmountPanel() ดับไฟได้เสมอ
+    local selectBtnRef
 
     local function disconnectInput()
         if inputConn then
@@ -1461,7 +1449,23 @@ registerRight("Home", function(scroll)
         end
     end
 
-    local function destroyAmountPanel()
+    -- ✅ Visual ของปุ่ม Select (เหมือน V A2)
+    local selectStrokeRef
+    local function updateSelectVisual(isOpen)
+        if not selectStrokeRef then return end
+        if isOpen then
+            selectStrokeRef.Color        = THEME.GREEN
+            selectStrokeRef.Thickness    = 2.4
+            selectStrokeRef.Transparency = 0
+        else
+            selectStrokeRef.Color        = THEME.GREEN_DARK
+            selectStrokeRef.Thickness    = 1.8
+            selectStrokeRef.Transparency = 0.4
+        end
+    end
+
+    -- ✅ ปิดแบบศูนย์กลาง: ปิด panel + ดับไฟ + opened=false (แก้บั๊กค้างไฟเขียว)
+    local function closeAmountPanel()
         if amountPanel then
             amountPanel:Destroy()
             amountPanel = nil
@@ -1470,6 +1474,12 @@ registerRight("Home", function(scroll)
         amountButtons = {}
         allButtons    = {}
         opened = false
+
+        updateSelectVisual(false)
+    end
+
+    local function destroyAmountPanel()
+        closeAmountPanel()
     end
 
     local function updateAmountHighlight()
@@ -1491,14 +1501,8 @@ registerRight("Home", function(scroll)
 
     local function openAmountPanel()
         destroyAmountPanel()
+        if not panelParent or not panelParent.AbsoluteSize then return end
 
-        if not panelParent or not panelParent.AbsoluteSize then
-            return
-        end
-
-        --------------------------------------------------------------------
-        -- วัดตำแหน่ง / ขนาด panel ด้านขวา (เหมือน V A2)
-        --------------------------------------------------------------------
         local pw, ph = panelParent.AbsoluteSize.X, panelParent.AbsoluteSize.Y
         local leftRatio   = 0.645
         local topRatio    = 0.02
@@ -1525,9 +1529,6 @@ registerRight("Home", function(scroll)
         corner(amountPanel, 12)
         stroke(amountPanel, 2.4, THEME.GREEN)
 
-        --------------------------------------------------------------------
-        -- BODY ด้านใน
-        --------------------------------------------------------------------
         local body = Instance.new("Frame")
         body.Name = "Body"
         body.Parent = amountPanel
@@ -1537,9 +1538,6 @@ registerRight("Home", function(scroll)
         body.Size     = UDim2.new(1, -8, 1, -8)
         body.ZIndex   = amountPanel.ZIndex + 1
 
-        --------------------------------------------------------------------
-        -- Search Box (เหมือน V A2)
-        --------------------------------------------------------------------
         local searchBox = Instance.new("TextBox")
         searchBox.Name = "SearchBox"
         searchBox.Parent = body
@@ -1559,9 +1557,6 @@ registerRight("Home", function(scroll)
         local sbStroke = stroke(searchBox, 1.8, THEME.GREEN)
         sbStroke.ZIndex = searchBox.ZIndex + 1
 
-        --------------------------------------------------------------------
-        -- ScrollingFrame (เหมือน V A2)
-        --------------------------------------------------------------------
         local listHolder = Instance.new("ScrollingFrame")
         listHolder.Name = "AmountList"
         listHolder.Parent = body
@@ -1571,7 +1566,6 @@ registerRight("Home", function(scroll)
         listHolder.AutomaticCanvasSize = Enum.AutomaticSize.Y
         listHolder.CanvasSize = UDim2.new(0,0,0,0)
         listHolder.ZIndex = body.ZIndex + 1
-
         listHolder.ScrollingDirection = Enum.ScrollingDirection.Y
         listHolder.ClipsDescendants = true
 
@@ -1592,9 +1586,6 @@ registerRight("Home", function(scroll)
         listPadding.PaddingLeft = UDim.new(0, 4)
         listPadding.PaddingRight = UDim.new(0, 4)
 
-        --------------------------------------------------------------------
-        -- กัน Canvas X เลื่อน (เหมือน V A2)
-        --------------------------------------------------------------------
         local locking = false
         listHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
             if locking then return end
@@ -1606,9 +1597,6 @@ registerRight("Home", function(scroll)
             locking = false
         end)
 
-        --------------------------------------------------------------------
-        -- ปุ่มเรืองแสง 1–36 Rebirth (Glow + Left Bar แบบ V A2)
-        --------------------------------------------------------------------
         amountButtons = {}
         allButtons    = {}
 
@@ -1618,7 +1606,6 @@ registerRight("Home", function(scroll)
             local btn = Instance.new("TextButton")
             btn.Name = "Btn_Rebirth_" .. tostring(amount)
             btn.Parent = listHolder
-
             btn.Size = UDim2.new(1, 0, 0, 28)
             btn.BackgroundColor3 = THEME.BLACK
             btn.AutoButtonColor = false
@@ -1644,17 +1631,12 @@ registerRight("Home", function(scroll)
             glowBar.ZIndex = btn.ZIndex + 1
             glowBar.Visible = false
 
-            amountButtons[amount] = {
-                button = btn,
-                stroke = st,
-                glow   = glowBar,
-            }
+            amountButtons[amount] = { button = btn, stroke = st, glow = glowBar }
             table.insert(allButtons, btn)
 
             btn.MouseButton1Click:Connect(function()
                 if not AA1 then return end
 
-                -- ถ้ากดจำนวนเดิมในโหมด FIXED → ยกเลิก FIXED กลับ SEQUENCE
                 if STATE.Mode == "FIXED" and STATE.Amount == amount then
                     AA1.setMode("SEQUENCE")
                     updateAmountHighlight()
@@ -1662,10 +1644,8 @@ registerRight("Home", function(scroll)
                     return
                 end
 
-                -- เลือกจำนวนใหม่ → FIXED + ตั้ง Amount
                 AA1.setAmount(amount)
                 AA1.setMode("FIXED")
-
                 updateAmountHighlight()
                 AA1.apply()
             end)
@@ -1680,17 +1660,12 @@ registerRight("Home", function(scroll)
 
         updateAmountHighlight()
 
-        --------------------------------------------------------------------
-        -- Search filter
-        --------------------------------------------------------------------
         local function applySearch()
             local q = trim(searchBox.Text or "")
             q = string.lower(q)
 
             if q == "" then
-                for _, btn in ipairs(allButtons) do
-                    btn.Visible = true
-                end
+                for _, btn in ipairs(allButtons) do btn.Visible = true end
             else
                 for _, btn in ipairs(allButtons) do
                     local text = string.lower(btn.Text or "")
@@ -1702,17 +1677,10 @@ registerRight("Home", function(scroll)
         end
 
         searchBox:GetPropertyChangedSignal("Text"):Connect(applySearch)
+        searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
+        searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        searchBox.Focused:Connect(function()
-            sbStroke.Color = THEME.GREEN
-        end)
-        searchBox.FocusLost:Connect(function()
-            sbStroke.Color = THEME.GREEN
-        end)
-
-        --------------------------------------------------------------------
-        -- ปิด panel เมื่อกด "ตรงไหนก็ได้ทั้งหน้าจอ" ยกเว้นใน panel นี้
-        --------------------------------------------------------------------
+        -- ✅ กดนอกจอ = ปิด + ดับไฟปุ่ม (ไม่ค้างแล้ว)
         inputConn = UserInputService.InputBegan:Connect(function(input)
             if not amountPanel then return end
             if input.UserInputType ~= Enum.UserInputType.MouseButton1
@@ -1729,13 +1697,9 @@ registerRight("Home", function(scroll)
                 pos.Y >= op.Y and pos.Y <= op.Y + os.Y
 
             if not inside then
-                destroyAmountPanel()
+                closeAmountPanel()
             end
         end)
-    end
-
-    local function closeAmountPanel()
-        destroyAmountPanel()
     end
 
     ------------------------------------------------------------------------
@@ -1762,6 +1726,8 @@ registerRight("Home", function(scroll)
     lab2.Text = "Select Rebirth Amount"
 
     local selectBtn = Instance.new("TextButton")
+    selectBtnRef = selectBtn
+
     selectBtn.Name = "VA2_Rebirth_Select"
     selectBtn.Parent = row2
     selectBtn.AnchorPoint = Vector2.new(1, 0.5)
@@ -1779,18 +1745,8 @@ registerRight("Home", function(scroll)
 
     local selectStroke = stroke(selectBtn, 1.8, THEME.GREEN_DARK)
     selectStroke.Transparency = 0.4
+    selectStrokeRef = selectStroke
 
-    local function updateSelectVisual(isOpen)
-        if isOpen then
-            selectStroke.Color        = THEME.GREEN
-            selectStroke.Thickness    = 2.4
-            selectStroke.Transparency = 0
-        else
-            selectStroke.Color        = THEME.GREEN_DARK
-            selectStroke.Thickness    = 1.8
-            selectStroke.Transparency = 0.4
-        end
-    end
     updateSelectVisual(false)
 
     local padding = Instance.new("UIPadding")
@@ -1811,13 +1767,11 @@ registerRight("Home", function(scroll)
 
     selectBtn.MouseButton1Click:Connect(function()
         if opened then
-            closeAmountPanel()
-            updateSelectVisual(false)
-            opened = false
+            closeAmountPanel() -- ✅ ปิดแบบดับไฟ
         else
             openAmountPanel()
-            updateSelectVisual(true)
             opened = true
+            updateSelectVisual(true)
         end
         print("[V A2 • Rebirth] Select Options clicked, opened =", opened)
     end)
