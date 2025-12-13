@@ -2186,22 +2186,146 @@ registerRight("Home", function(scroll)
         if indexRwOn then row5.setState(true, false) end
     end)
 end)
---===== UFO HUB X • Home – Auto Potion 🧪 (Model A V1 + V A2 Overlay) =====
+--===== UFO HUB X • Home – Auto Potion 🧪 (AA1 + Model A V1 + V A2 Overlay) =====
 -- Tab: Home
--- Row1 (Model A V1 Switch): Auto Potion
--- Row2 (Model A V2 Overlay 100%): Select Potions (4 buttons, multi-select, click again = cancel)
+-- Row1 (A V1 Switch): Auto Potion (AA1)
+-- Row2 (V A2 Overlay 100%): Select Potions (4 buttons, multi-select, click again = cancel)
 -- Remote:
 -- local args = {"Use Item","Luck Potion",1}
 -- ReplicatedStorage.Paper.Remotes.__remotefunction:InvokeServer(unpack(args))
 
+----------------------------------------------------------------------
+-- AA1 RUNNER (ทำงานทันทีตอนรันสคริปต์หลัก)
+----------------------------------------------------------------------
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+        get = function(_, _, d) return d end,
+        set = function() end,
+    }
+
+    local GAME_ID  = tonumber(game.GameId)  or 0
+    local PLACE_ID = tonumber(game.PlaceId) or 0
+    local BASE     = ("AA1/HomeAutoPotion/%d/%d"):format(GAME_ID, PLACE_ID)
+
+    local function K(field) return BASE .. "/" .. field end
+
+    local function SaveGet(field, default)
+        local ok, v = pcall(function()
+            return SAVE.get(K(field), default)
+        end)
+        return ok and v or default
+    end
+
+    local function SaveSet(field, value)
+        pcall(function()
+            SAVE.set(K(field), value)
+        end)
+    end
+
+    local POTION_LIST = {
+        "Luck Potion",
+        "Speed Potion",
+        "Damage Potion",
+        "Coin Potion",
+    }
+
+    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
+    _G.UFOX_AA1["HomeAutoPotion"] = _G.UFOX_AA1["HomeAutoPotion"] or {}
+
+    local SYS = _G.UFOX_AA1["HomeAutoPotion"]
+
+    SYS.STATE = SYS.STATE or {
+        Enabled  = SaveGet("Enabled", false),
+        Selected = SaveGet("Selected", {}), -- {["Luck Potion"]=true, ...}
+    }
+
+    local STATE = SYS.STATE
+    if type(STATE.Selected) ~= "table" then STATE.Selected = {} end
+    for k,v in pairs(STATE.Selected) do
+        if v ~= true then STATE.Selected[k] = nil end
+    end
+
+    local function getRF()
+        local ok, rf = pcall(function()
+            return ReplicatedStorage:WaitForChild("Paper")
+                :WaitForChild("Remotes")
+                :WaitForChild("__remotefunction")
+        end)
+        if not ok then return nil end
+        return rf
+    end
+
+    local function usePotion(itemName)
+        local rf = getRF()
+        if not rf then return end
+        local args = { "Use Item", itemName, 1 }
+        pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+    end
+
+    local runnerStarted = false
+    local function ensureRunner()
+        if runnerStarted then return end
+        runnerStarted = true
+
+        task.spawn(function()
+            while true do
+                if STATE.Enabled then
+                    local did = false
+                    for _, name in ipairs(POTION_LIST) do
+                        if not STATE.Enabled then break end
+                        if STATE.Selected[name] == true then
+                            did = true
+                            usePotion(name)
+                            task.wait(0.25)
+                        end
+                    end
+                    task.wait(did and 0.10 or 0.25)
+                else
+                    task.wait(0.25)
+                end
+            end
+        end)
+    end
+
+    local function setEnabled(v)
+        v = v and true or false
+        STATE.Enabled = v
+        SaveSet("Enabled", v)
+        ensureRunner()
+    end
+
+    local function setSelected(name, v)
+        if v then
+            STATE.Selected[name] = true
+        else
+            STATE.Selected[name] = nil
+        end
+        SaveSet("Selected", STATE.Selected)
+    end
+
+    SYS.setEnabled  = setEnabled
+    SYS.setSelected = setSelected
+    SYS.getEnabled  = function() return STATE.Enabled end
+    SYS.getSelected = function(name) return STATE.Selected[name] == true end
+    SYS.ensureRunner = ensureRunner
+
+    -- AA1: ถ้าเคยเปิดไว้ → รันเลย (ไม่ต้องกด Home)
+    task.defer(function()
+        ensureRunner()
+    end)
+end
+
+----------------------------------------------------------------------
+-- UI PART: Model A V1 + V A2 Overlay ใน Tab Home (Sync กับ AA1)
+----------------------------------------------------------------------
 registerRight("Home", function(scroll)
     local TweenService      = game:GetService("TweenService")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local UserInputService  = game:GetService("UserInputService")
 
-    ------------------------------------------------------------------------
-    -- THEME + HELPERS (Model A V1 / V A2)
-    ------------------------------------------------------------------------
     local THEME = {
         GREEN       = Color3.fromRGB(25,255,125),
         GREEN_DARK  = Color3.fromRGB(0,120,60),
@@ -2238,6 +2362,16 @@ registerRight("Home", function(scroll)
         return (s:gsub("^%s*(.-)%s*$", "%1"))
     end
 
+    local AA1  = _G.UFOX_AA1 and _G.UFOX_AA1["HomeAutoPotion"]
+    local STATE = (AA1 and AA1.STATE) or { Enabled=false, Selected={} }
+
+    local POTION_LIST = {
+        "Luck Potion",
+        "Speed Potion",
+        "Damage Potion",
+        "Coin Potion",
+    }
+
     ------------------------------------------------------------------------
     -- CLEANUP (กันซ้อน)
     ------------------------------------------------------------------------
@@ -2255,7 +2389,7 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- UIListLayout (Model A V1 rule: 1 layout + dynamic base)
+    -- UIListLayout (A V1: 1 layout + dynamic base)
     ------------------------------------------------------------------------
     local vlist = scroll:FindFirstChildOfClass("UIListLayout")
     if not vlist then
@@ -2289,7 +2423,7 @@ registerRight("Home", function(scroll)
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
-    -- Base Row (Model A V1 card)
+    -- Base Row (A V1 card)
     ------------------------------------------------------------------------
     local function makeRow(name, order, labelText)
         local row = Instance.new("Frame")
@@ -2316,79 +2450,7 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Remote call helper
-    ------------------------------------------------------------------------
-    local function usePotion(itemName)
-        local ok, rf = pcall(function()
-            return ReplicatedStorage:WaitForChild("Paper")
-                :WaitForChild("Remotes")
-                :WaitForChild("__remotefunction")
-        end)
-        if not ok or not rf then return end
-
-        local args = {
-            "Use Item",
-            itemName,
-            1
-        }
-
-        pcall(function()
-            rf:InvokeServer(unpack(args))
-        end)
-    end
-
-    ------------------------------------------------------------------------
-    -- STATE (local)
-    ------------------------------------------------------------------------
-    local AUTO_ENABLED = false
-    local SELECTED = {
-        ["Luck Potion"]   = false,
-        ["Speed Potion"]  = false,
-        ["Damage Potion"] = false,
-        ["Coin Potion"]   = false,
-    }
-
-    local POTION_LIST = {
-        "Luck Potion",
-        "Speed Potion",
-        "Damage Potion",
-        "Coin Potion",
-    }
-
-    ------------------------------------------------------------------------
-    -- Runner (auto use)
-    ------------------------------------------------------------------------
-    local runnerStarted = false
-    local function ensureRunner()
-        if runnerStarted then return end
-        runnerStarted = true
-
-        task.spawn(function()
-            while true do
-                if AUTO_ENABLED then
-                    local did = false
-                    for _, name in ipairs(POTION_LIST) do
-                        if not AUTO_ENABLED then break end
-                        if SELECTED[name] == true then
-                            did = true
-                            usePotion(name)
-                            task.wait(0.25)
-                        end
-                    end
-                    if not did then
-                        task.wait(0.25)
-                    else
-                        task.wait(0.10)
-                    end
-                else
-                    task.wait(0.25)
-                end
-            end
-        end)
-    end
-
-    ------------------------------------------------------------------------
-    -- Row1: Model A V1 Switch (Auto Potion)
+    -- Row1: A V1 Switch (AA1)
     ------------------------------------------------------------------------
     local row1 = makeRow("HPOT_Row1", base + 2, "Auto Potion")
 
@@ -2438,8 +2500,16 @@ registerRight("Home", function(scroll)
         }
     end
 
+    local sw1 = makeAV1Switch(row1, (AA1 and AA1.getEnabled and AA1.getEnabled()) or (STATE.Enabled == true), function(on)
+        if AA1 and AA1.setEnabled then
+            AA1.setEnabled(on)
+        else
+            STATE.Enabled = on and true or false
+        end
+    end)
+
     ------------------------------------------------------------------------
-    -- Row2: Model A V2 Overlay (100%)
+    -- Row2: V A2 Overlay (เปิดดูได้เลย ไม่ต้องเปิดสวิตช์)
     ------------------------------------------------------------------------
     local row2 = makeRow("HPOT_Row2", base + 3, "Select Potions")
     local panelParent = scroll.Parent
@@ -2493,7 +2563,7 @@ registerRight("Home", function(scroll)
     arrow.Text = "▼"
 
     ------------------------------------------------------------------------
-    -- V A2 Popup Panel
+    -- V A2 Popup Panel + CLOSE BOTH SCREEN (ยกเว้น panel / selectBtn / search)
     ------------------------------------------------------------------------
     local optionsPanel
     local inputConn
@@ -2615,7 +2685,6 @@ registerRight("Home", function(scroll)
         listPadding.PaddingLeft = UDim.new(0, 4)
         listPadding.PaddingRight = UDim.new(0, 4)
 
-        -- Glow Button (multi-select)
         allButtons = {}
 
         local function makeGlowButton(label)
@@ -2649,7 +2718,7 @@ registerRight("Home", function(scroll)
             glowBar.Visible = false
 
             local function update()
-                local on = (SELECTED[label] == true)
+                local on = (AA1 and AA1.getSelected and AA1.getSelected(label)) or (STATE.Selected and STATE.Selected[label] == true)
                 if on then
                     st.Color        = THEME.GREEN
                     st.Thickness    = 2.4
@@ -2665,7 +2734,14 @@ registerRight("Home", function(scroll)
             update()
 
             btn.MouseButton1Click:Connect(function()
-                SELECTED[label] = not (SELECTED[label] == true) -- กดซ้ำ = ยกเลิก
+                local cur = (AA1 and AA1.getSelected and AA1.getSelected(label)) or (STATE.Selected and STATE.Selected[label] == true)
+                local newv = not cur
+                if AA1 and AA1.setSelected then
+                    AA1.setSelected(label, newv)
+                else
+                    STATE.Selected = STATE.Selected or {}
+                    if newv then STATE.Selected[label] = true else STATE.Selected[label] = nil end
+                end
                 update()
             end)
 
@@ -2690,7 +2766,7 @@ registerRight("Home", function(scroll)
             locking = false
         end)
 
-        -- Search filter (works)
+        -- Search filter
         local function applySearch()
             local q = trim(searchBox.Text or "")
             q = string.lower(q)
@@ -2713,9 +2789,9 @@ registerRight("Home", function(scroll)
         searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
         searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        -- GLOBAL CLICK CLOSE (ทั้งหน้าจอ) ยกเว้น: panel / selectBtn / searchBox
-        inputConn = UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
+        -- CLOSE ทั้งหน้าจอแบบ “ปิดแน่นอน”
+        -- NOTE: ไม่สน gp แล้ว เพื่อให้กดตรงไหนก็ปิดได้จริง
+        inputConn = UserInputService.InputBegan:Connect(function(input)
             if not optionsPanel then return end
 
             local t = input.UserInputType
@@ -2736,45 +2812,29 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Row2 enable/disable by Row1 (ตามที่สั่ง: Row1 เปิดใช้ระบบ Row2)
-    ------------------------------------------------------------------------
-    local row2Enabled = false
-    local function setRow2Enabled(on)
-        row2Enabled = on and true or false
-        if not row2Enabled then
-            closePanel()
-        end
-        -- ทำให้ปุ่มดู “ปิด” แต่ยังคงสไตล์เดิม
-        selectBtn.TextTransparency = row2Enabled and 0 or 0.35
-        selectStroke.Transparency  = row2Enabled and 0.4 or 0.75
-        if not opened then
-            updateSelectVisual(false)
-        end
-    end
-
-    ------------------------------------------------------------------------
-    -- Row1 switch wiring
-    ------------------------------------------------------------------------
-    local sw1 = makeAV1Switch(row1, false, function(on)
-        AUTO_ENABLED = on and true or false
-        ensureRunner()
-        setRow2Enabled(AUTO_ENABLED)
-    end)
-
-    setRow2Enabled(false)
-
-    ------------------------------------------------------------------------
-    -- Select Options toggle
+    -- Toggle Select Options (เปิดได้เลยตลอด)
     ------------------------------------------------------------------------
     selectBtn.MouseButton1Click:Connect(function()
-        if not row2Enabled then return end
-
         if opened then
             closePanel()
         else
             openPanel()
             opened = true
             updateSelectVisual(true)
+        end
+    end)
+
+    ------------------------------------------------------------------------
+    -- INIT SYNC (AA1)
+    ------------------------------------------------------------------------
+    task.defer(function()
+        if AA1 and AA1.ensureRunner then
+            AA1.ensureRunner()
+        end
+        if AA1 and AA1.getEnabled then
+            sw1.set(AA1.getEnabled())
+        else
+            sw1.set(STATE.Enabled == true)
         end
     end)
 end)
