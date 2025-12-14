@@ -2851,6 +2851,234 @@ registerRight("Home", function(scroll)
         end
     end)
 end)
+--===== UFO HUB X • Quest – Buy Event Pickaxe ⚒️ (Model A V1 + AA1) =====
+-- Row1: A V1 Switch
+-- AA1: auto-run on UI load if Enabled=true
+-- Client calls Server RemoteEvent (secure)
+
+----------------------------------------------------------------------
+-- AA1 SAVE (uses getgenv().UFOX_SAVE)
+----------------------------------------------------------------------
+local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+    get = function(_, _, d) return d end,
+    set = function() end,
+}
+
+local GAME_ID  = tonumber(game.GameId)  or 0
+local PLACE_ID = tonumber(game.PlaceId) or 0
+local BASE     = ("AA1/QuestEventPickaxe/%d/%d"):format(GAME_ID, PLACE_ID)
+local function K(field) return BASE .. "/" .. field end
+
+local function SaveGet(field, default)
+    local ok, v = pcall(function()
+        return SAVE.get(K(field), default)
+    end)
+    return ok and v or default
+end
+
+local function SaveSet(field, value)
+    pcall(function()
+        SAVE.set(K(field), value)
+    end)
+end
+
+----------------------------------------------------------------------
+-- AA1 STATE + EXPORT
+----------------------------------------------------------------------
+_G.UFOX_AA1 = _G.UFOX_AA1 or {}
+_G.UFOX_AA1["QuestEventPickaxe"] = _G.UFOX_AA1["QuestEventPickaxe"] or {}
+local SYS = _G.UFOX_AA1["QuestEventPickaxe"]
+
+SYS.STATE = SYS.STATE or {
+    Enabled = SaveGet("Enabled", false),
+}
+local STATE = SYS.STATE
+
+----------------------------------------------------------------------
+-- Server Remote (secure)
+----------------------------------------------------------------------
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local function getServerRemote()
+    local folder = ReplicatedStorage:WaitForChild("UFO_HUB_X_ServerRemotes")
+    return folder:WaitForChild("Quest_BuyEventPickaxe")
+end
+
+----------------------------------------------------------------------
+-- RUNNER (AA1)
+----------------------------------------------------------------------
+local runnerStarted = false
+local function ensureRunner()
+    if runnerStarted then return end
+    runnerStarted = true
+
+    task.spawn(function()
+        while true do
+            if STATE.Enabled then
+                local ok, re = pcall(getServerRemote)
+                if ok and re then
+                    pcall(function()
+                        re:FireServer()
+                    end)
+                end
+                task.wait(0.75)
+            else
+                task.wait(0.25)
+            end
+        end
+    end)
+end
+
+local function setEnabled(v)
+    v = v and true or false
+    STATE.Enabled = v
+    SaveSet("Enabled", v)
+    ensureRunner()
+end
+
+SYS.setEnabled = setEnabled
+SYS.getEnabled = function() return STATE.Enabled end
+
+-- AA1: auto-run immediately on UI load (no need to click Quest)
+task.defer(function()
+    ensureRunner()
+end)
+
+----------------------------------------------------------------------
+-- UI (Quest) — Model A V1
+----------------------------------------------------------------------
+registerRight("Quest", function(scroll)
+    local TweenService = game:GetService("TweenService")
+
+    local THEME = {
+        GREEN      = Color3.fromRGB(25,255,125),
+        GREEN_DARK = Color3.fromRGB(0,120,60),
+        WHITE      = Color3.fromRGB(255,255,255),
+        BLACK      = Color3.fromRGB(0,0,0),
+        RED        = Color3.fromRGB(255,40,40),
+    }
+
+    local function corner(ui, r)
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, r or 12)
+        c.Parent = ui
+        return c
+    end
+
+    local function stroke(ui, th, col)
+        local s = Instance.new("UIStroke")
+        s.Thickness = th or 2.2
+        s.Color = col or THEME.GREEN
+        s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        s.Parent = ui
+        return s
+    end
+
+    local function tween(o, p, d)
+        TweenService:Create(
+            o,
+            TweenInfo.new(d or 0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            p
+        ):Play()
+    end
+
+    -- UIListLayout (A V1 rule)
+    local vlist = scroll:FindFirstChildOfClass("UIListLayout")
+    if not vlist then
+        vlist = Instance.new("UIListLayout")
+        vlist.Parent = scroll
+        vlist.Padding   = UDim.new(0, 12)
+        vlist.SortOrder = Enum.SortOrder.LayoutOrder
+    end
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+    -- dynamic base
+    local base = 0
+    for _, ch in ipairs(scroll:GetChildren()) do
+        if ch:IsA("GuiObject") and ch ~= vlist then
+            base = math.max(base, ch.LayoutOrder or 0)
+        end
+    end
+
+    -- Header (English + emoji)
+    local header = Instance.new("TextLabel")
+    header.Name = "QE_Header"
+    header.Parent = scroll
+    header.BackgroundTransparency = 1
+    header.Size = UDim2.new(1, 0, 0, 36)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 16
+    header.TextColor3 = THEME.WHITE
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Text = "Buy Event Pickaxe ⚒️"
+    header.LayoutOrder = base + 1
+
+    -- Row (A V1 card)
+    local row = Instance.new("Frame")
+    row.Name = "QE_Row1"
+    row.Parent = scroll
+    row.Size = UDim2.new(1, -6, 0, 46)
+    row.BackgroundColor3 = THEME.BLACK
+    corner(row, 12)
+    stroke(row, 2.2, THEME.GREEN)
+    row.LayoutOrder = base + 2
+
+    local lab = Instance.new("TextLabel")
+    lab.Parent = row
+    lab.BackgroundTransparency = 1
+    lab.Size = UDim2.new(1, -160, 1, 0)
+    lab.Position = UDim2.new(0, 16, 0, 0)
+    lab.Font = Enum.Font.GothamBold
+    lab.TextSize = 13
+    lab.TextColor3 = THEME.WHITE
+    lab.TextXAlignment = Enum.TextXAlignment.Left
+    lab.Text = "Auto Buy Event Pickaxe"
+
+    -- Switch (A V1)
+    local sw = Instance.new("Frame")
+    sw.Parent = row
+    sw.AnchorPoint = Vector2.new(1,0.5)
+    sw.Position = UDim2.new(1, -12, 0.5, 0)
+    sw.Size = UDim2.fromOffset(52,26)
+    sw.BackgroundColor3 = THEME.BLACK
+    corner(sw, 13)
+
+    local swStroke = Instance.new("UIStroke")
+    swStroke.Parent = sw
+    swStroke.Thickness = 1.8
+
+    local knob = Instance.new("Frame")
+    knob.Parent = sw
+    knob.Size = UDim2.fromOffset(22,22)
+    knob.BackgroundColor3 = THEME.WHITE
+    knob.Position = UDim2.new(0,2,0.5,-11)
+    corner(knob, 11)
+
+    local btn = Instance.new("TextButton")
+    btn.Parent = sw
+    btn.BackgroundTransparency = 1
+    btn.Size = UDim2.fromScale(1,1)
+    btn.Text = ""
+    btn.AutoButtonColor = false
+
+    local on = STATE.Enabled and true or false
+    local function update()
+        swStroke.Color = on and THEME.GREEN or THEME.RED
+        tween(knob, {Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)}, 0.08)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        on = not on
+        SYS.setEnabled(on)
+        update()
+    end)
+
+    -- Sync from AA1 + make it run immediately if enabled
+    task.defer(function()
+        on = STATE.Enabled and true or false
+        update()
+        ensureRunner()
+    end)
+end)
 --===== UFO HUB X • Shop – Auto Sell (Model A V1 + AA1) =====
 -- Tab: Shop
 -- Header: Auto Sell 💰
