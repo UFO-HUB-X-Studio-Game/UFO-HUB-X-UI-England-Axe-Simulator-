@@ -3870,10 +3870,12 @@ registerRight("Quest", function(scroll)
     arrow.Text = "▼"
 
     ------------------------------------------------------------------------
-    -- V A2 Popup Panel (Search + Glow Buttons + TapAnywhereClose)  [FIXED]
+    -- V A2 Popup Panel (Search + Glow Buttons + TapAnywhereClose)  [FINAL]
+    -- ปิดเมื่อแตะทั้งหน้าจอ ยกเว้น "ภายใน UI ด้านขวา (optionsPanel)" เท่านั้น
     ------------------------------------------------------------------------
     local optionsPanel
-    local inputConn
+    local tapConn
+    local wheelConn
     local opened = false
     local searchBox
     local allButtons = {}
@@ -3886,8 +3888,9 @@ registerRight("Quest", function(scroll)
         return pos.X >= ap.X and pos.X <= ap.X + as.X and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y
     end
 
-    local function disconnectInput()
-        if inputConn then inputConn:Disconnect() inputConn = nil end
+    local function disconnectAll()
+        if tapConn then tapConn:Disconnect() tapConn = nil end
+        if wheelConn then wheelConn:Disconnect() wheelConn = nil end
         if removedConn then removedConn:Disconnect() removedConn = nil end
     end
 
@@ -3897,7 +3900,7 @@ registerRight("Quest", function(scroll)
     end
 
     local function closePanel()
-        disconnectInput()
+        disconnectAll()
         if optionsPanel then
             optionsPanel:Destroy()
             optionsPanel = nil
@@ -4110,35 +4113,36 @@ registerRight("Quest", function(scroll)
         searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
         searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        -- GLOBAL CLOSE: แตะ/คลิก/สกอลล์ ทั้งหน้าจอ = ปิด
-        -- ยกเว้น: แตะใน optionsPanel / แตะปุ่ม selectBtn / แตะช่อง searchBox
-        inputConn = UserInputService.InputBegan:Connect(function(input, gp)
+        -- ✅ แตะ/คลิก "ที่ไหนก็ปิด" ยกเว้นอยู่ใน optionsPanel
+        tapConn = UserInputService.InputBegan:Connect(function(input, gp)
             if gp then return end
             if not optionsPanel then return end
 
             local t = input.UserInputType
-            local isTap =
-                (t == Enum.UserInputType.MouseButton1)
-                or (t == Enum.UserInputType.Touch)
-                or (t == Enum.UserInputType.MouseWheel)
-
-            if not isTap then return end
-
-            local pos
-            if t == Enum.UserInputType.MouseWheel then
-                pos = UserInputService:GetMouseLocation()
-            else
-                pos = input.Position
+            if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then
+                return
             end
 
-            local keep =
-                isInside(optionsPanel, pos)
-                or isInside(selectBtn, pos)
-                or (searchBox and isInside(searchBox, pos))
-
-            if not keep then
-                closePanel()
+            local pos = input.Position
+            if isInside(optionsPanel, pos) then
+                return
             end
+
+            closePanel()
+        end)
+
+        -- ✅ สกอลล์ "ที่ไหนก็ปิด" ยกเว้นสกอลล์อยู่ใน optionsPanel
+        wheelConn = UserInputService.InputChanged:Connect(function(input, gp)
+            if gp then return end
+            if not optionsPanel then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+
+            local pos = UserInputService:GetMouseLocation()
+            if isInside(optionsPanel, pos) then
+                return
+            end
+
+            closePanel()
         end)
 
         opened = true
