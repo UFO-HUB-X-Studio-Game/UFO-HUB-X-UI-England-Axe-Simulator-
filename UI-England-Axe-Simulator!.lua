@@ -3047,7 +3047,7 @@ registerRight("Quest", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "Buy Event Pickaxe 🎄"
+    header.Text = "》》》⛏️ Buy Event Pickaxe 🎄《《《"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
@@ -3142,6 +3142,313 @@ registerRight("Quest", function(scroll)
     end)
 
     -- Sync visual + ensure AA1 apply (เผื่อ UI เปิดทีหลัง)
+    task.defer(function()
+        setSwitchVisual(STATE.Enabled)
+        if AA1 and AA1.apply then AA1.apply() end
+    end)
+end)
+--===== UFO HUB X • Quest – Christmas Tree 🎄 (Model A V1 + AA1) =====
+-- Tab: Quest
+-- Row1 (A V1 Switch): Auto Buy & Unlock Christmas Tree
+-- AA1: Auto-run from SaveState on UI load (no need to click Quest)
+-- Remote sequence each loop:
+-- 1) InvokeServer("Buy Christmas Rank")
+-- 2) InvokeServer("Claim Christmas Tree", false)
+
+----------------------------------------------------------------------
+-- AA1 RUNNER (ไม่มี UI, ทำงานทันทีตอนรันสคริปต์)
+----------------------------------------------------------------------
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    -- SAVE (AA1) ใช้ getgenv().UFOX_SAVE
+    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
+        get = function(_, _, d) return d end,
+        set = function() end,
+    }
+
+    local GAME_ID  = tonumber(game.GameId)  or 0
+    local PLACE_ID = tonumber(game.PlaceId) or 0
+    local BASE_SCOPE = ("AA1/QuestChristmasTree/%d/%d"):format(GAME_ID, PLACE_ID)
+
+    local function K(field) return BASE_SCOPE .. "/" .. field end
+
+    local function SaveGet(field, default)
+        local ok, v = pcall(function()
+            return SAVE.get(K(field), default)
+        end)
+        return ok and v or default
+    end
+
+    local function SaveSet(field, value)
+        pcall(function()
+            SAVE.set(K(field), value)
+        end)
+    end
+
+    -- STATE
+    local STATE = {
+        Enabled = SaveGet("Enabled", false),
+    }
+
+    -- Remote
+    local function getRF()
+        local ok, rf = pcall(function()
+            return ReplicatedStorage:WaitForChild("Paper")
+                :WaitForChild("Remotes")
+                :WaitForChild("__remotefunction")
+        end)
+        if not ok then
+            warn("[UFO HUB X • QuestChristmasTree AA1] cannot get __remotefunction")
+            return nil
+        end
+        return rf
+    end
+
+    local function buyRank()
+        local rf = getRF()
+        if not rf then return end
+        local args = { "Buy Christmas Rank" }
+        pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+    end
+
+    local function claimTree()
+        local rf = getRF()
+        if not rf then return end
+        local args = { "Claim Christmas Tree", false }
+        pcall(function()
+            rf:InvokeServer(unpack(args))
+        end)
+    end
+
+    -- LOOP
+    local LOOP_DELAY = 0.45
+    local loopRunning = false
+
+    local function startLoop()
+        if loopRunning then return end
+        loopRunning = true
+        task.spawn(function()
+            while STATE.Enabled do
+                buyRank()
+                task.wait(0.12)
+                claimTree()
+                task.wait(LOOP_DELAY)
+            end
+            loopRunning = false
+        end)
+    end
+
+    local function applyFromState()
+        if STATE.Enabled then
+            startLoop()
+        end
+    end
+
+    -- EXPORT AA1
+    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
+    _G.UFOX_AA1["QuestChristmasTree"] = {
+        state = STATE,
+        apply = applyFromState,
+        setEnabled = function(v)
+            STATE.Enabled = v and true or false
+            SaveSet("Enabled", STATE.Enabled)
+            applyFromState()
+        end,
+        saveGet = SaveGet,
+        saveSet = SaveSet,
+    }
+
+    -- AUTO-RUN: ถ้าเคยเปิดไว้ -> ทำงานทันทีตอนรัน UI หลัก
+    task.defer(function()
+        applyFromState()
+    end)
+end
+
+----------------------------------------------------------------------
+-- UI PART: Model A V1 ใน Tab Quest (Sync กับ AA1 ด้านบน)
+----------------------------------------------------------------------
+
+registerRight("Quest", function(scroll)
+    local TweenService = game:GetService("TweenService")
+
+    ------------------------------------------------------------------------
+    -- THEME + HELPERS (Model A V1)
+    ------------------------------------------------------------------------
+    local THEME = {
+        GREEN       = Color3.fromRGB(25,255,125),
+        GREEN_DARK  = Color3.fromRGB(0,120,60),
+        WHITE       = Color3.fromRGB(255,255,255),
+        BLACK       = Color3.fromRGB(0,0,0),
+        RED         = Color3.fromRGB(255,40,40),
+    }
+
+    local function corner(ui, r)
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, r or 12)
+        c.Parent = ui
+        return c
+    end
+
+    local function stroke(ui, th, col)
+        local s = Instance.new("UIStroke")
+        s.Thickness = th or 2.2
+        s.Color = col or THEME.GREEN
+        s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        s.Parent = ui
+        return s
+    end
+
+    local function tween(o, p, d)
+        TweenService:Create(
+            o,
+            TweenInfo.new(d or 0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            p
+        ):Play()
+    end
+
+    ------------------------------------------------------------------------
+    -- CLEANUP (กันซ้อน)
+    ------------------------------------------------------------------------
+    for _, name in ipairs({
+        "QCT_Header",
+        "QCT_Row1",
+    }) do
+        local o = scroll:FindFirstChild(name)
+            or scroll.Parent:FindFirstChild(name)
+            or (scroll:FindFirstAncestorOfClass("ScreenGui")
+                and scroll:FindFirstAncestorOfClass("ScreenGui"):FindFirstChild(name))
+        if o then o:Destroy() end
+    end
+
+    ------------------------------------------------------------------------
+    -- UIListLayout (A V1 rule: 1 layout + dynamic base)
+    ------------------------------------------------------------------------
+    local vlist = scroll:FindFirstChildOfClass("UIListLayout")
+    if not vlist then
+        vlist = Instance.new("UIListLayout")
+        vlist.Parent = scroll
+        vlist.Padding   = UDim.new(0, 12)
+        vlist.SortOrder = Enum.SortOrder.LayoutOrder
+    end
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+    local base = 0
+    for _, ch in ipairs(scroll:GetChildren()) do
+        if ch:IsA("GuiObject") and ch ~= vlist then
+            base = math.max(base, ch.LayoutOrder or 0)
+        end
+    end
+
+    ------------------------------------------------------------------------
+    -- HEADER (English + emoji)
+    ------------------------------------------------------------------------
+    local header = Instance.new("TextLabel")
+    header.Name = "QCT_Header"
+    header.Parent = scroll
+    header.BackgroundTransparency = 1
+    header.Size = UDim2.new(1, 0, 0, 36)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 16
+    header.TextColor3 = THEME.WHITE
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.Text = "》》》🎁 Unlock Christmas Tree 🎄《《《"
+    header.LayoutOrder = base + 1
+
+    ------------------------------------------------------------------------
+    -- Base Row (A V1 card)
+    ------------------------------------------------------------------------
+    local function makeRow(name, order, labelText)
+        local row = Instance.new("Frame")
+        row.Name = name
+        row.Parent = scroll
+        row.Size = UDim2.new(1, -6, 0, 46)
+        row.BackgroundColor3 = THEME.BLACK
+        corner(row, 12)
+        stroke(row, 2.2, THEME.GREEN)
+        row.LayoutOrder = order
+
+        local lab = Instance.new("TextLabel")
+        lab.Parent = row
+        lab.BackgroundTransparency = 1
+        lab.Size = UDim2.new(1, -160, 1, 0)
+        lab.Position = UDim2.new(0, 16, 0, 0)
+        lab.Font = Enum.Font.GothamBold
+        lab.TextSize = 13
+        lab.TextColor3 = THEME.WHITE
+        lab.TextXAlignment = Enum.TextXAlignment.Left
+        lab.Text = labelText
+
+        return row, lab
+    end
+
+    ------------------------------------------------------------------------
+    -- A V1 Switch
+    ------------------------------------------------------------------------
+    local function makeAV1Switch(parentRow, initialOn, onToggle)
+        local sw = Instance.new("Frame")
+        sw.Parent = parentRow
+        sw.AnchorPoint = Vector2.new(1,0.5)
+        sw.Position = UDim2.new(1, -12, 0.5, 0)
+        sw.Size = UDim2.fromOffset(52,26)
+        sw.BackgroundColor3 = THEME.BLACK
+        corner(sw, 13)
+
+        local swStroke = Instance.new("UIStroke")
+        swStroke.Parent = sw
+        swStroke.Thickness = 1.8
+
+        local knob = Instance.new("Frame")
+        knob.Parent = sw
+        knob.Size = UDim2.fromOffset(22,22)
+        knob.BackgroundColor3 = THEME.WHITE
+        knob.Position = UDim2.new(0,2,0.5,-11)
+        corner(knob, 11)
+
+        local btn = Instance.new("TextButton")
+        btn.Parent = sw
+        btn.BackgroundTransparency = 1
+        btn.Size = UDim2.fromScale(1,1)
+        btn.Text = ""
+        btn.AutoButtonColor = false
+
+        local on = initialOn and true or false
+
+        local function update()
+            swStroke.Color = on and THEME.GREEN or THEME.RED
+            tween(knob, {Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)}, 0.08)
+        end
+
+        btn.MouseButton1Click:Connect(function()
+            on = not on
+            update()
+            if onToggle then onToggle(on) end
+        end)
+
+        update()
+        return function(v)
+            on = v and true or false
+            update()
+        end
+    end
+
+    ------------------------------------------------------------------------
+    -- Wire to AA1
+    ------------------------------------------------------------------------
+    local AA1 = _G.UFOX_AA1 and _G.UFOX_AA1["QuestChristmasTree"]
+    local STATE = (AA1 and AA1.state) or { Enabled = false }
+
+    local row1 = makeRow("QCT_Row1", base + 2, "Auto Unlock Christmas Tree")
+
+    local setSwitchVisual = makeAV1Switch(row1, STATE.Enabled, function(on)
+        if AA1 and AA1.setEnabled then
+            AA1.setEnabled(on)
+        end
+    end)
+
+    -- Sync visual + ensure AA1 apply
     task.defer(function()
         setSwitchVisual(STATE.Enabled)
         if AA1 and AA1.apply then AA1.apply() end
