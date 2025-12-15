@@ -3612,7 +3612,6 @@ do
         end,
     }
 
-    -- AA1 Auto-Run
     task.defer(function()
         applyFromState()
     end)
@@ -3871,13 +3870,14 @@ registerRight("Quest", function(scroll)
     arrow.Text = "▼"
 
     ------------------------------------------------------------------------
-    -- V A2 Popup Panel (Search + Glow Buttons + TapAnywhereClose)
+    -- V A2 Popup Panel (Search + Glow Buttons + TapAnywhereClose)  [FIXED]
     ------------------------------------------------------------------------
     local optionsPanel
     local inputConn
     local opened = false
     local searchBox
     local allButtons = {}
+    local removedConn
 
     local function isInside(gui, pos)
         if not gui or not gui.Parent then return false end
@@ -3887,10 +3887,8 @@ registerRight("Quest", function(scroll)
     end
 
     local function disconnectInput()
-        if inputConn then
-            inputConn:Disconnect()
-            inputConn = nil
-        end
+        if inputConn then inputConn:Disconnect() inputConn = nil end
+        if removedConn then removedConn:Disconnect() removedConn = nil end
     end
 
     local function hardResetClosed()
@@ -3899,14 +3897,29 @@ registerRight("Quest", function(scroll)
     end
 
     local function closePanel()
+        disconnectInput()
         if optionsPanel then
             optionsPanel:Destroy()
             optionsPanel = nil
         end
         searchBox = nil
         allButtons = {}
-        disconnectInput()
         hardResetClosed()
+    end
+
+    local function bindLife(panel)
+        panel.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                optionsPanel = nil
+                closePanel()
+            end
+        end)
+        removedConn = panelParent.ChildRemoved:Connect(function(ch)
+            if ch == panel then
+                optionsPanel = nil
+                closePanel()
+            end
+        end)
     end
 
     local function openPanel()
@@ -3938,12 +3951,7 @@ registerRight("Quest", function(scroll)
         corner(optionsPanel, 12)
         stroke(optionsPanel, 2.4, THEME.GREEN)
 
-        -- ถ้าโดน Destroy/ย้ายพ่อ/หายเอง -> รีเซ็ตปุ่มให้กลับปกติ
-        optionsPanel.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                hardResetClosed()
-            end
-        end)
+        bindLife(optionsPanel)
 
         local body = Instance.new("Frame")
         body.Name = "Body"
@@ -4055,7 +4063,7 @@ registerRight("Quest", function(scroll)
             update()
 
             btn.MouseButton1Click:Connect(function()
-                local newOn = not (STATE.Selected[label] == true) -- กดซ้ำ = ยกเลิก
+                local newOn = not (STATE.Selected[label] == true)
                 STATE.Selected[label] = newOn
                 if AA1 and AA1.setSelected then
                     AA1.setSelected(label, newOn)
@@ -4088,9 +4096,7 @@ registerRight("Quest", function(scroll)
         local function applySearch()
             local q = string.lower(trim(searchBox.Text))
             if q == "" then
-                for _, btn in ipairs(allButtons) do
-                    btn.Visible = true
-                end
+                for _, btn in ipairs(allButtons) do btn.Visible = true end
             else
                 for _, btn in ipairs(allButtons) do
                     local text = string.lower(btn.Text or "")
@@ -4104,8 +4110,7 @@ registerRight("Quest", function(scroll)
         searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
         searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        -- GLOBAL CLOSE:
-        -- แตะ/คลิก/สกอลล์ "ทั้งหน้าจอ" = ปิด
+        -- GLOBAL CLOSE: แตะ/คลิก/สกอลล์ ทั้งหน้าจอ = ปิด
         -- ยกเว้น: แตะใน optionsPanel / แตะปุ่ม selectBtn / แตะช่อง searchBox
         inputConn = UserInputService.InputBegan:Connect(function(input, gp)
             if gp then return end
@@ -4119,7 +4124,13 @@ registerRight("Quest", function(scroll)
 
             if not isTap then return end
 
-            local pos = input.Position
+            local pos
+            if t == Enum.UserInputType.MouseWheel then
+                pos = UserInputService:GetMouseLocation()
+            else
+                pos = input.Position
+            end
+
             local keep =
                 isInside(optionsPanel, pos)
                 or isInside(selectBtn, pos)
@@ -4135,7 +4146,7 @@ registerRight("Quest", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Wire Row1 switch -> AA1 (คุมระบบวิ่งอย่างเดียว ไม่ล็อค Row2 แล้ว)
+    -- Wire Row1 switch -> AA1 (คุมระบบวิ่งอย่างเดียว)
     ------------------------------------------------------------------------
     local sw1 = makeAV1Switch(row1, STATE.Enabled, function(on)
         if AA1 and AA1.setEnabled then
@@ -4150,7 +4161,7 @@ registerRight("Quest", function(scroll)
     end)
 
     ------------------------------------------------------------------------
-    -- Select Options toggle (เปิด/ปิด แผงขวา)
+    -- Select Options toggle (เปิด/ปิด แผงขวา)  [Row2 เปิดได้เลย]
     ------------------------------------------------------------------------
     selectBtn.MouseButton1Click:Connect(function()
         if opened then
