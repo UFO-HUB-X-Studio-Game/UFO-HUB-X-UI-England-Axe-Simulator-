@@ -1020,7 +1020,7 @@ registerRight("Home", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "Auto Farm 🚀"
+    header.Text = "》》》Auto Farm 🦾《《《"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
@@ -5325,7 +5325,7 @@ registerRight("Shop", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "Upgrades Auto ⚡"
+    header.Text = "》》》Upgrades Auto ⚡《《《"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
