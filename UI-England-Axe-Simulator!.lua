@@ -711,10 +711,10 @@ registerRight("Settings", function(scroll) end)
  --===== UFO HUB X • Home – Auto Farm (Model A V1 + AA1 + Global Auto-Run) =====
 -- Tab: Home
 -- Header: Auto Farm 🚀
--- Row1: Auto Mine  -> Toggle Setting: "AutoMine"
--- Row2: Auto Train -> Toggle Setting: "AutoTrain"
--- เปิดได้ทีละอัน + เซฟด้วย AA1 + ตอนรันสคริปต์จะ Auto-Run ตามค่าเซฟทันที
--- ไม่จำเป็นต้องกดแท็บ Home ก่อน
+-- Row1: Auto Mine  -> RemoteEvent: FireServer("Toggle Setting","AutoMine")
+-- Row2: Auto Train -> RemoteEvent: FireServer("Toggle Setting","AutoTrain")
+-- กดสวิตช์ = ถ้าเปิดอยู่จะ "ปิด" (ยิง Toggle) / ถ้าปิดอยู่จะ "เปิด" (ยิง Toggle)
+-- เปิดได้ทีละอัน + เซฟด้วย AA1 + ตอนรันสคริปต์จะ Auto-Run ตามค่าเซฟทันที (ไม่ต้องกด Home)
 
 ---------------------------------------------------------------------
 -- 1) AA1 GLOBAL AUTO-RUN (รันทันทีที่โหลดสคริปต์)
@@ -722,7 +722,6 @@ registerRight("Settings", function(scroll) end)
 do
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-    -- SAVE (ใช้เหมือนระบบอื่น UFOX_SAVE)
     local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
         get = function(_, _, d) return d end,
         set = function() end,
@@ -730,13 +729,9 @@ do
 
     local GAME_ID  = tonumber(game.GameId)  or 0
     local PLACE_ID = tonumber(game.PlaceId) or 0
-
-    -- AA1/HomeAutoFarm/<GAME>/<PLACE>/AutoMine / AutoTrain
     local BASE_SCOPE = ("AA1/HomeAutoFarm/%d/%d"):format(GAME_ID, PLACE_ID)
 
-    local function K(field)
-        return BASE_SCOPE .. "/" .. field
-    end
+    local function K(field) return BASE_SCOPE .. "/" .. field end
 
     local function SaveGet(field, default)
         local ok, v = pcall(function()
@@ -751,61 +746,98 @@ do
         end)
     end
 
-    -- โหลดสถานะจากเซฟ
-    local autoMineOn  = SaveGet("AutoMine",  false)
-    local autoTrainOn = SaveGet("AutoTrain", false)
-
-    -- ถ้าดันเซฟมาว่าทั้งคู่เป็น true → เลือกให้เหลือ AutoMine อย่างเดียว
-    if autoMineOn and autoTrainOn then
-        autoTrainOn = false
-        SaveSet("AutoTrain", false)
+    local function getEvt()
+        local paper   = ReplicatedStorage:WaitForChild("Paper")
+        local remotes = paper:WaitForChild("Remotes")
+        return remotes:WaitForChild("__remoteevent")
     end
 
-    -- ฟังก์ชันยิง Remote "Toggle Setting"
-    local function fireSetting(settingName)
+    local function fireToggle(settingName)
         local ok, err = pcall(function()
-            local paper   = ReplicatedStorage:WaitForChild("Paper")
-            local remotes = paper:WaitForChild("Remotes")
-            local evt     = remotes:WaitForChild("__remoteevent")
+            local evt = getEvt()
             evt:FireServer("Toggle Setting", settingName)
         end)
         if not ok then
-            warn("[UFO HUB X • HomeAutoFarm AA1] FireSetting error:", settingName, err)
+            warn("[UFO HUB X • HomeAutoFarm] Toggle error:", settingName, err)
         end
     end
 
-    -- AA1: Auto-Run ตาม STATE ทันที (ไม่ต้องกด Home)
-    task.defer(function()
-        if autoMineOn then
-            fireSetting("AutoMine")
+    -- STATE จากเซฟ
+    local STATE = {
+        AutoMine  = (SaveGet("AutoMine",  false) == true),
+        AutoTrain = (SaveGet("AutoTrain", false) == true),
+    }
+
+    -- กันเซฟหลุดเป็น true ทั้งคู่
+    if STATE.AutoMine and STATE.AutoTrain then
+        STATE.AutoTrain = false
+        SaveSet("AutoTrain", false)
+    end
+
+    -- ฟังก์ชันแบบ “สวิตช์จริง”:
+    -- ถ้าอยากให้ ON แต่ปัจจุบัน OFF -> ยิง Toggle ให้ ON
+    -- ถ้าอยากให้ OFF แต่ปัจจุบัน ON -> ยิง Toggle ให้ OFF
+    local function setOne(name, wantOn)
+        wantOn = (wantOn == true)
+        if STATE[name] == wantOn then return end
+        STATE[name] = wantOn
+        SaveSet(name, wantOn)
+        fireToggle(name) -- ยิงครั้งเดียวเพื่อกลับสถานะ
+    end
+
+    local function setMine(on)
+        on = (on == true)
+        if on then
+            -- เปิด Mine -> ปิด Train ก่อน (ถ้าจำเป็น)
+            if STATE.AutoTrain then
+                setOne("AutoTrain", false)
+            end
+            setOne("AutoMine", true)
+        else
+            setOne("AutoMine", false)
         end
-        if autoTrainOn then
-            fireSetting("AutoTrain")
+    end
+
+    local function setTrain(on)
+        on = (on == true)
+        if on then
+            -- เปิด Train -> ปิด Mine ก่อน (ถ้าจำเป็น)
+            if STATE.AutoMine then
+                setOne("AutoMine", false)
+            end
+            setOne("AutoTrain", true)
+        else
+            setOne("AutoTrain", false)
+        end
+    end
+
+    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
+    _G.UFOX_AA1["HomeAutoFarm"] = {
+        state = STATE,
+        setMine  = setMine,
+        setTrain = setTrain,
+        getMine  = function() return STATE.AutoMine  == true end,
+        getTrain = function() return STATE.AutoTrain == true end,
+        saveGet  = SaveGet,
+        saveSet  = SaveSet,
+    }
+
+    -- AUTO-RUN ตามค่าเซฟทันที (ไม่ต้องกด Home)
+    task.defer(function()
+        if STATE.AutoMine then
+            fireToggle("AutoMine")
+        elseif STATE.AutoTrain then
+            fireToggle("AutoTrain")
         end
     end)
-
-    -- export state / helper ไว้เผื่อระบบอื่นจะมาใช้ต่อภายหลัง
-    _G.UFOX_AA1 = _G.UFOX_AA1 or {}
-    _G.UFOX_AA1.HomeAutoFarm = {
-        state = {
-            AutoMine  = autoMineOn,
-            AutoTrain = autoTrainOn,
-        },
-        saveGet = SaveGet,
-        saveSet = SaveSet,
-    }
 end
 
 ---------------------------------------------------------------------
 -- 2) UI ฝั่งขวา (Model A V1) สำหรับแท็บ Home
 ---------------------------------------------------------------------
 registerRight("Home", function(scroll)
-    local TweenService       = game:GetService("TweenService")
-    local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+    local TweenService      = game:GetService("TweenService")
 
-    ------------------------------------------------------------------------
-    -- THEME + HELPERS (หน้าตาเดียวกับ Model A V1)
-    ------------------------------------------------------------------------
     local THEME = {
         GREEN = Color3.fromRGB(25,255,125),
         RED   = Color3.fromRGB(255,40,40),
@@ -817,6 +849,7 @@ registerRight("Home", function(scroll)
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(0, r or 12)
         c.Parent = ui
+        return c
     end
 
     local function stroke(ui, th, col)
@@ -825,6 +858,7 @@ registerRight("Home", function(scroll)
         s.Color = col or THEME.GREEN
         s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         s.Parent = ui
+        return s
     end
 
     local function tween(o, p, d)
@@ -835,61 +869,26 @@ registerRight("Home", function(scroll)
         ):Play()
     end
 
+    local AA1 = _G.UFOX_AA1 and _G.UFOX_AA1["HomeAutoFarm"]
+    local STATE = (AA1 and AA1.state) or { AutoMine=false, AutoTrain=false }
+
     ------------------------------------------------------------------------
-    -- AA1 SAVE (ใช้ scope เดียวกับด้านบน)
+    -- CLEANUP (กันซ้อน)
     ------------------------------------------------------------------------
-    local SAVE = (getgenv and getgenv().UFOX_SAVE) or {
-        get = function(_, _, d) return d end,
-        set = function() end,
-    }
-
-    local GAME_ID  = tonumber(game.GameId)  or 0
-    local PLACE_ID = tonumber(game.PlaceId) or 0
-    local BASE_SCOPE = ("AA1/HomeAutoFarm/%d/%d"):format(GAME_ID, PLACE_ID)
-
-    local function K(field)
-        return BASE_SCOPE .. "/" .. field
-    end
-
-    local function SaveGet(field, default)
-        local ok, v = pcall(function()
-            return SAVE.get(K(field), default)
-        end)
-        return ok and v or default
-    end
-
-    local function SaveSet(field, value)
-        pcall(function()
-            SAVE.set(K(field), value)
-        end)
-    end
-
-    -- STATE เริ่มต้นจาก Save
-    local autoMineOn  = SaveGet("AutoMine",  false)
-    local autoTrainOn = SaveGet("AutoTrain", false)
-
-    if autoMineOn and autoTrainOn then
-        autoTrainOn = false
-        SaveSet("AutoTrain", false)
+    for _, name in ipairs({
+        "HAF_Header",
+        "HAF_Row1",
+        "HAF_Row2",
+    }) do
+        local o = scroll:FindFirstChild(name)
+            or scroll.Parent:FindFirstChild(name)
+            or (scroll:FindFirstAncestorOfClass("ScreenGui")
+                and scroll:FindFirstAncestorOfClass("ScreenGui"):FindFirstChild(name))
+        if o then o:Destroy() end
     end
 
     ------------------------------------------------------------------------
-    -- REMOTE: Toggle Setting (AutoMine / AutoTrain)
-    ------------------------------------------------------------------------
-    local function fireSetting(settingName)
-        local ok, err = pcall(function()
-            local paper   = ReplicatedStorage:WaitForChild("Paper")
-            local remotes = paper:WaitForChild("Remotes")
-            local evt     = remotes:WaitForChild("__remoteevent")
-            evt:FireServer("Toggle Setting", settingName)
-        end)
-        if not ok then
-            warn("[UFO HUB X • Home Auto Farm] FireSetting error:", settingName, err)
-        end
-    end
-
-    ------------------------------------------------------------------------
-    -- UIListLayout (ตามกฎ Model A V1)
+    -- UIListLayout (A V1: 1 layout + dynamic base)
     ------------------------------------------------------------------------
     local vlist = scroll:FindFirstChildOfClass("UIListLayout")
     if not vlist then
@@ -908,10 +907,10 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- HEADER: Auto Farm 🚀
+    -- HEADER
     ------------------------------------------------------------------------
     local header = Instance.new("TextLabel")
-    header.Name = "A1_Home_AutoFarm_Header"
+    header.Name = "HAF_Header"
     header.Parent = scroll
     header.BackgroundTransparency = 1
     header.Size = UDim2.new(1, 0, 0, 36)
@@ -919,13 +918,13 @@ registerRight("Home", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "》》》Auto Farm ⛏️《《《"
+    header.Text = "Auto Farm 🚀"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
-    -- แถวแบบสวิตช์ (ดีไซน์ Model A V1)
+    -- Base Row (A V1 card)
     ------------------------------------------------------------------------
-    local function makeRowSwitch(name, order, labelText, onToggle)
+    local function makeRow(name, order, labelText)
         local row = Instance.new("Frame")
         row.Name = name
         row.Parent = scroll
@@ -935,7 +934,6 @@ registerRight("Home", function(scroll)
         stroke(row, 2.2, THEME.GREEN)
         row.LayoutOrder = order
 
-        -- Label ซ้าย
         local lab = Instance.new("TextLabel")
         lab.Parent = row
         lab.BackgroundTransparency = 1
@@ -947,9 +945,15 @@ registerRight("Home", function(scroll)
         lab.TextXAlignment = Enum.TextXAlignment.Left
         lab.Text = labelText
 
-        -- กล่องสวิตช์ขวา
+        return row
+    end
+
+    ------------------------------------------------------------------------
+    -- A V1 Switch helper (คลิก = สลับจริง: ON->OFF / OFF->ON)
+    ------------------------------------------------------------------------
+    local function makeAV1Switch(parentRow, initialOn, onToggle)
         local sw = Instance.new("Frame")
-        sw.Parent = row
+        sw.Parent = parentRow
         sw.AnchorPoint = Vector2.new(1,0.5)
         sw.Position = UDim2.new(1, -12, 0.5, 0)
         sw.Size = UDim2.fromOffset(52,26)
@@ -964,27 +968,7 @@ registerRight("Home", function(scroll)
         knob.Parent = sw
         knob.Size = UDim2.fromOffset(22,22)
         knob.BackgroundColor3 = THEME.WHITE
-        knob.Position = UDim2.new(0,2,0.5,-11)
-        corner(knob,11)
-
-        local currentOn = false
-
-        local function updateVisual(on)
-            currentOn = on
-            swStroke.Color = on and THEME.GREEN or THEME.RED
-            tween(knob, {
-                Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)
-            }, 0.08)
-        end
-
-        local function setState(on, fireCallback)
-            fireCallback = (fireCallback ~= false)
-            if currentOn == on then return end
-            updateVisual(on)
-            if fireCallback and onToggle then
-                onToggle(on)
-            end
-        end
+        corner(knob, 11)
 
         local btn = Instance.new("TextButton")
         btn.Parent = sw
@@ -992,72 +976,77 @@ registerRight("Home", function(scroll)
         btn.Size = UDim2.fromScale(1,1)
         btn.Text = ""
         btn.AutoButtonColor = false
+
+        local on = (initialOn == true)
+
+        local function update()
+            swStroke.Color = on and THEME.GREEN or THEME.RED
+            tween(knob, {Position = UDim2.new(on and 1 or 0, on and -24 or 2, 0.5, -11)}, 0.08)
+        end
+
         btn.MouseButton1Click:Connect(function()
-            setState(not currentOn, true)
+            on = not on
+            update()
+            if onToggle then onToggle(on) end
         end)
 
-        updateVisual(false)
-
+        update()
         return {
-            row      = row,
-            setState = setState,
-            getState = function() return currentOn end,
+            set = function(v) on = (v == true); update() end,
+            get = function() return on end,
         }
     end
 
     ------------------------------------------------------------------------
-    -- สร้าง 2 สวิตช์: Auto Mine / Auto Train (เปิดได้ทีละอัน)
+    -- Row1: Auto Mine
     ------------------------------------------------------------------------
-    local autoMineRow
-    local autoTrainRow
+    local row1 = makeRow("HAF_Row1", base + 2, "Auto Mine")
 
-    autoMineRow = makeRowSwitch("A1_Home_AutoMine", base + 2, "Auto Mine", function(state)
-        autoMineOn  = state
-        SaveSet("AutoMine", state)
+    ------------------------------------------------------------------------
+    -- Row2: Auto Train
+    ------------------------------------------------------------------------
+    local row2 = makeRow("HAF_Row2", base + 3, "Auto Train")
 
-        -- toggle ในเกม
-        fireSetting("AutoMine")
+    local swMine, swTrain
 
-        if state then
-            -- ถ้าเปิด AutoMine → ปิด AutoTrain ทั้ง STATE + UI + เกม
-            if autoTrainOn then
-                autoTrainOn = false
-                SaveSet("AutoTrain", false)
-                if autoTrainRow then
-                    autoTrainRow.setState(false, false)
-                end
-                fireSetting("AutoTrain")
-            end
+    swMine = makeAV1Switch(row1, (AA1 and AA1.getMine and AA1.getMine()) or (STATE.AutoMine == true), function(on)
+        if AA1 and AA1.setMine then
+            AA1.setMine(on) -- จะยิง Toggle ให้ “เปิด/ปิด” ตามสวิตช์
+        else
+            STATE.AutoMine = (on == true)
+        end
+
+        -- เปิดได้ทีละอัน: ถ้าเปิด Mine -> ปิด Train ใน UI ทันที
+        if on and swTrain then
+            swTrain.set(false)
         end
     end)
 
-    autoTrainRow = makeRowSwitch("A1_Home_AutoTrain", base + 3, "Auto Train", function(state)
-        autoTrainOn = state
-        SaveSet("AutoTrain", state)
+    swTrain = makeAV1Switch(row2, (AA1 and AA1.getTrain and AA1.getTrain()) or (STATE.AutoTrain == true), function(on)
+        if AA1 and AA1.setTrain then
+            AA1.setTrain(on)
+        else
+            STATE.AutoTrain = (on == true)
+        end
 
-        fireSetting("AutoTrain")
-
-        if state then
-            if autoMineOn then
-                autoMineOn = false
-                SaveSet("AutoMine", false)
-                if autoMineRow then
-                    autoMineRow.setState(false, false)
-                end
-                fireSetting("AutoMine")
-            end
+        if on and swMine then
+            swMine.set(false)
         end
     end)
 
     ------------------------------------------------------------------------
-    -- SYNC UI จาก STATE (เฉพาะตอนเปิดแท็บ Home ครั้งแรก)
+    -- INIT SYNC UI จากเซฟ
     ------------------------------------------------------------------------
     task.defer(function()
-        if autoMineOn and not autoTrainOn then
-            autoMineRow.setState(true, false)
-        elseif autoTrainOn and not autoMineOn then
-            autoTrainRow.setState(true, false)
+        local mineOn  = (AA1 and AA1.getMine  and AA1.getMine())  or (STATE.AutoMine  == true)
+        local trainOn = (AA1 and AA1.getTrain and AA1.getTrain()) or (STATE.AutoTrain == true)
+
+        if mineOn and trainOn then
+            trainOn = false
         end
+
+        swMine.set(mineOn)
+        swTrain.set(trainOn)
     end)
 end)
 --===== UFO HUB X • Home – Auto Rebirth (AA1 Runner + Model A V1 + A V2) =====
