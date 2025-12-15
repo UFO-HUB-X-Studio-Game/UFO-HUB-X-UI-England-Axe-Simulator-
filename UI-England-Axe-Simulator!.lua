@@ -3870,16 +3870,17 @@ registerRight("Quest", function(scroll)
     arrow.Text = "▼"
 
     ------------------------------------------------------------------------
-    -- V A2 Popup Panel (Search + Glow Buttons + TapAnywhereClose)  [FINAL]
-    -- ปิดเมื่อแตะทั้งหน้าจอ ยกเว้น "ภายใน UI ด้านขวา (optionsPanel)" เท่านั้น
+    -- V A2 Popup Panel (Search + Glow Buttons + CLOSE FULL SCREEN) [MATCH HOME]
+    -- ปิดเมื่อแตะ/คลิก/สกอลล์ "ทั้งหน้าจอ" จริงๆ
+    -- ยกเว้น: แตะใน optionsPanel / แตะ selectBtn / แตะ searchBox
     ------------------------------------------------------------------------
     local optionsPanel
     local tapConn
     local wheelConn
+    local removedConn
     local opened = false
     local searchBox
     local allButtons = {}
-    local removedConn
 
     local function isInside(gui, pos)
         if not gui or not gui.Parent then return false end
@@ -3894,20 +3895,19 @@ registerRight("Quest", function(scroll)
         if removedConn then removedConn:Disconnect() removedConn = nil end
     end
 
-    local function hardResetClosed()
-        opened = false
-        updateSelectVisual(false)
-    end
-
     local function closePanel()
         disconnectAll()
+
         if optionsPanel then
             optionsPanel:Destroy()
             optionsPanel = nil
         end
+
         searchBox = nil
         allButtons = {}
-        hardResetClosed()
+
+        opened = false
+        updateSelectVisual(false)
     end
 
     local function bindLife(panel)
@@ -3917,6 +3917,7 @@ registerRight("Quest", function(scroll)
                 closePanel()
             end
         end)
+
         removedConn = panelParent.ChildRemoved:Connect(function(ch)
             if ch == panel then
                 optionsPanel = nil
@@ -4113,9 +4114,8 @@ registerRight("Quest", function(scroll)
         searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
         searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        -- ✅ แตะ/คลิก "ที่ไหนก็ปิด" ยกเว้นอยู่ใน optionsPanel
-        tapConn = UserInputService.InputBegan:Connect(function(input, gp)
-            if gp then return end
+        -- ✅ CLOSE ทั้งหน้าจอแบบ Home: ไม่สน gp → กดตรงไหนก็ปิดได้จริง
+        tapConn = UserInputService.InputBegan:Connect(function(input)
             if not optionsPanel then return end
 
             local t = input.UserInputType
@@ -4124,25 +4124,29 @@ registerRight("Quest", function(scroll)
             end
 
             local pos = input.Position
-            if isInside(optionsPanel, pos) then
-                return
-            end
+            local keep =
+                isInside(optionsPanel, pos)
+                or isInside(selectBtn, pos)
+                or (searchBox and isInside(searchBox, pos))
 
-            closePanel()
+            if not keep then
+                closePanel()
+            end
         end)
 
-        -- ✅ สกอลล์ "ที่ไหนก็ปิด" ยกเว้นสกอลล์อยู่ใน optionsPanel
-        wheelConn = UserInputService.InputChanged:Connect(function(input, gp)
-            if gp then return end
+        wheelConn = UserInputService.InputChanged:Connect(function(input)
             if not optionsPanel then return end
             if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
 
             local pos = UserInputService:GetMouseLocation()
-            if isInside(optionsPanel, pos) then
-                return
-            end
+            local keep =
+                isInside(optionsPanel, pos)
+                or isInside(selectBtn, pos)
+                or (searchBox and isInside(searchBox, pos))
 
-            closePanel()
+            if not keep then
+                closePanel()
+            end
         end)
 
         opened = true
