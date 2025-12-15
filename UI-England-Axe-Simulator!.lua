@@ -708,16 +708,14 @@ registerRight("Home", function(scroll) end)
 registerRight("Quest", function(scroll) end)
 registerRight("Shop", function(scroll) end)
 registerRight("Settings", function(scroll) end)
- --===== UFO HUB X • Home – Auto Farm (Model A V1 + AA1 + Global Auto-Run) =====
--- Tab: Home
--- Header: Auto Farm 🚀
--- Row1: Auto Mine  -> RemoteEvent: FireServer("Toggle Setting","AutoMine")
--- Row2: Auto Train -> RemoteEvent: FireServer("Toggle Setting","AutoTrain")
--- กดสวิตช์ = ถ้าเปิดอยู่จะ "ปิด" (ยิง Toggle) / ถ้าปิดอยู่จะ "เปิด" (ยิง Toggle)
--- เปิดได้ทีละอัน + เซฟด้วย AA1 + ตอนรันสคริปต์จะ Auto-Run ตามค่าเซฟทันที (ไม่ต้องกด Home)
+ --===== UFO HUB X • Home – Auto Farm (Model A V1 + AA1 + Global Auto-Run + SYNC DETECT) =====
+-- Row1: Auto Mine  -> FireServer("Toggle Setting","AutoMine")
+-- Row2: Auto Train -> FireServer("Toggle Setting","AutoTrain")
+-- ✅ เปิดได้ทีละอัน + เซฟ AA1 + Auto-Run ตอนโหลดสคริปต์
+-- ✅ SYNC ตรวจจับ “คนอื่นยิง Toggle Setting” (ปุ่ม 3/4 หรือระบบอื่น) แล้วอัปเดตสวิตช์เราให้ตรงกัน
 
 ---------------------------------------------------------------------
--- 1) AA1 GLOBAL AUTO-RUN (รันทันทีที่โหลดสคริปต์)
+-- 1) AA1 GLOBAL + SYNC DETECT (รันทันทีที่โหลดสคริปต์)
 ---------------------------------------------------------------------
 do
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -752,12 +750,25 @@ do
         return remotes:WaitForChild("__remoteevent")
     end
 
+    local EVT = nil
+    local function ensureEvt()
+        if EVT and EVT.Parent then return EVT end
+        local ok, ev = pcall(getEvt)
+        if ok then EVT = ev end
+        return EVT
+    end
+
+    local INTERNAL_FIRE = false
     local function fireToggle(settingName)
         local ok, err = pcall(function()
-            local evt = getEvt()
-            evt:FireServer("Toggle Setting", settingName)
+            local ev = ensureEvt()
+            if not ev then return end
+            INTERNAL_FIRE = true
+            ev:FireServer("Toggle Setting", settingName)
+            task.defer(function() INTERNAL_FIRE = false end)
         end)
         if not ok then
+            INTERNAL_FIRE = false
             warn("[UFO HUB X • HomeAutoFarm] Toggle error:", settingName, err)
         end
     end
@@ -774,56 +785,151 @@ do
         SaveSet("AutoTrain", false)
     end
 
-    -- ฟังก์ชันแบบ “สวิตช์จริง”:
-    -- ถ้าอยากให้ ON แต่ปัจจุบัน OFF -> ยิง Toggle ให้ ON
-    -- ถ้าอยากให้ OFF แต่ปัจจุบัน ON -> ยิง Toggle ให้ OFF
-    local function setOne(name, wantOn)
+    -- hook UI sync (จะถูกเซ็ตจากฝั่ง UI)
+    local UI_SYNC = {
+        setMine  = function(_) end,
+        setTrain = function(_) end,
+    }
+
+    -- ฟังก์ชัน “ตั้งค่าให้เป็น ON/OFF แน่นอน” (ถ้าต่างจริงค่อยยิง Toggle)
+    local function setOne(name, wantOn, doFire)
         wantOn = (wantOn == true)
         if STATE[name] == wantOn then return end
         STATE[name] = wantOn
         SaveSet(name, wantOn)
-        fireToggle(name) -- ยิงครั้งเดียวเพื่อกลับสถานะ
-    end
-
-    local function setMine(on)
-        on = (on == true)
-        if on then
-            -- เปิด Mine -> ปิด Train ก่อน (ถ้าจำเป็น)
-            if STATE.AutoTrain then
-                setOne("AutoTrain", false)
-            end
-            setOne("AutoMine", true)
-        else
-            setOne("AutoMine", false)
+        if doFire ~= false then
+            fireToggle(name)
         end
     end
 
-    local function setTrain(on)
+    local function setMine(on, doFire)
         on = (on == true)
         if on then
-            -- เปิด Train -> ปิด Mine ก่อน (ถ้าจำเป็น)
-            if STATE.AutoMine then
-                setOne("AutoMine", false)
+            -- เปิด Mine -> ปิด Train ก่อน
+            if STATE.AutoTrain then
+                setOne("AutoTrain", false, doFire)
+                UI_SYNC.setTrain(false)
             end
-            setOne("AutoTrain", true)
+            setOne("AutoMine", true, doFire)
+            UI_SYNC.setMine(true)
         else
-            setOne("AutoTrain", false)
+            setOne("AutoMine", false, doFire)
+            UI_SYNC.setMine(false)
+        end
+    end
+
+    local function setTrain(on, doFire)
+        on = (on == true)
+        if on then
+            -- เปิด Train -> ปิด Mine ก่อน
+            if STATE.AutoMine then
+                setOne("AutoMine", false, doFire)
+                UI_SYNC.setMine(false)
+            end
+            setOne("AutoTrain", true, doFire)
+            UI_SYNC.setTrain(true)
+        else
+            setOne("AutoTrain", false, doFire)
+            UI_SYNC.setTrain(false)
+        end
+    end
+
+    -- ✅ DETECT: ถ้ามีระบบอื่นยิง EVT:FireServer("Toggle Setting", "AutoMine/AutoTrain")
+    -- เราจะ “พลิก STATE” แล้วซิงค์ UI + บังคับเปิดได้ทีละอัน (ปิดอีกตัวให้ด้วย)
+    local DETECT_READY = false
+    local function onExternalToggle(settingName)
+        if INTERNAL_FIRE then return end
+        if settingName ~= "AutoMine" and settingName ~= "AutoTrain" then return end
+
+        -- เพราะ Remote เป็น Toggle เราเลย “flip” จาก state ที่เรารู้ล่าสุด
+        local newOn = not (STATE[settingName] == true)
+
+        if settingName == "AutoMine" then
+            -- ถ้าคนอื่นเปิด Mine แล้ว Train เปิดอยู่ -> ปิด Train ในเกมด้วย (ยิง Toggle Train 1 ครั้ง)
+            if newOn and STATE.AutoTrain then
+                STATE.AutoTrain = false
+                SaveSet("AutoTrain", false)
+                UI_SYNC.setTrain(false)
+                fireToggle("AutoTrain")
+            end
+
+            STATE.AutoMine = newOn
+            SaveSet("AutoMine", newOn)
+            UI_SYNC.setMine(newOn)
+
+        elseif settingName == "AutoTrain" then
+            if newOn and STATE.AutoMine then
+                STATE.AutoMine = false
+                SaveSet("AutoMine", false)
+                UI_SYNC.setMine(false)
+                fireToggle("AutoMine")
+            end
+
+            STATE.AutoTrain = newOn
+            SaveSet("AutoTrain", newOn)
+            UI_SYNC.setTrain(newOn)
+        end
+    end
+
+    local function setupDetect()
+        if DETECT_READY then return end
+        local ev = ensureEvt()
+        if not ev then return end
+
+        -- ใช้ hookmetamethod ถ้ามี (ตรวจจับได้จริงว่าใครยิง FireServer)
+        local ok = pcall(function()
+            if typeof(hookmetamethod) ~= "function" then return end
+
+            local old
+            old = hookmetamethod(game, "__namecall", function(self, ...)
+                local method = getnamecallmethod and getnamecallmethod() or ""
+                if self == ev and method == "FireServer" then
+                    local a1, a2 = ...
+                    if a1 == "Toggle Setting" and (a2 == "AutoMine" or a2 == "AutoTrain") then
+                        onExternalToggle(a2)
+                    end
+                end
+                return old(self, ...)
+            end)
+            DETECT_READY = true
+        end)
+
+        -- ถ้าเครื่องมือ hook ไม่มี ก็ปล่อยผ่าน (สวิตช์/AA1 ยังทำงานปกติ)
+        if not ok then
+            -- ไม่ต้อง warn เพื่อไม่รก
         end
     end
 
     _G.UFOX_AA1 = _G.UFOX_AA1 or {}
     _G.UFOX_AA1["HomeAutoFarm"] = {
         state = STATE,
-        setMine  = setMine,
-        setTrain = setTrain,
+
+        setMine  = function(on) setMine(on, true) end,
+        setTrain = function(on) setTrain(on, true) end,
+
+        -- ให้ UI ใช้ซิงค์โดยไม่ยิง Remote ซ้ำ
+        _uiBind = function(bind)
+            if type(bind) == "table" then
+                if type(bind.setMine)  == "function" then UI_SYNC.setMine  = bind.setMine end
+                if type(bind.setTrain) == "function" then UI_SYNC.setTrain = bind.setTrain end
+            end
+        end,
+
         getMine  = function() return STATE.AutoMine  == true end,
         getTrain = function() return STATE.AutoTrain == true end,
+
         saveGet  = SaveGet,
         saveSet  = SaveSet,
+
+        _setupDetect = setupDetect,
+        _onExternalToggle = onExternalToggle,
     }
 
     -- AUTO-RUN ตามค่าเซฟทันที (ไม่ต้องกด Home)
     task.defer(function()
+        -- เปิด detect ก่อน จะได้เห็น event จากระบบอื่นด้วย
+        setupDetect()
+
         if STATE.AutoMine then
             fireToggle("AutoMine")
         elseif STATE.AutoTrain then
@@ -836,7 +942,7 @@ end
 -- 2) UI ฝั่งขวา (Model A V1) สำหรับแท็บ Home
 ---------------------------------------------------------------------
 registerRight("Home", function(scroll)
-    local TweenService      = game:GetService("TweenService")
+    local TweenService = game:GetService("TweenService")
 
     local THEME = {
         GREEN = Color3.fromRGB(25,255,125),
@@ -875,11 +981,7 @@ registerRight("Home", function(scroll)
     ------------------------------------------------------------------------
     -- CLEANUP (กันซ้อน)
     ------------------------------------------------------------------------
-    for _, name in ipairs({
-        "HAF_Header",
-        "HAF_Row1",
-        "HAF_Row2",
-    }) do
+    for _, name in ipairs({ "HAF_Header", "HAF_Row1", "HAF_Row2" }) do
         local o = scroll:FindFirstChild(name)
             or scroll.Parent:FindFirstChild(name)
             or (scroll:FindFirstAncestorOfClass("ScreenGui")
@@ -949,7 +1051,7 @@ registerRight("Home", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- A V1 Switch helper (คลิก = สลับจริง: ON->OFF / OFF->ON)
+    -- A V1 Switch helper (คลิก = สลับจริง)
     ------------------------------------------------------------------------
     local function makeAV1Switch(parentRow, initialOn, onToggle)
         local sw = Instance.new("Frame")
@@ -992,34 +1094,23 @@ registerRight("Home", function(scroll)
 
         update()
         return {
-            set = function(v) on = (v == true); update() end,
+            set = function(v) on = (v == true); update() end, -- visual only (ไม่เรียก callback)
             get = function() return on end,
         }
     end
 
-    ------------------------------------------------------------------------
-    -- Row1: Auto Mine
-    ------------------------------------------------------------------------
     local row1 = makeRow("HAF_Row1", base + 2, "Auto Mine")
-
-    ------------------------------------------------------------------------
-    -- Row2: Auto Train
-    ------------------------------------------------------------------------
     local row2 = makeRow("HAF_Row2", base + 3, "Auto Train")
 
     local swMine, swTrain
 
     swMine = makeAV1Switch(row1, (AA1 and AA1.getMine and AA1.getMine()) or (STATE.AutoMine == true), function(on)
         if AA1 and AA1.setMine then
-            AA1.setMine(on) -- จะยิง Toggle ให้ “เปิด/ปิด” ตามสวิตช์
+            AA1.setMine(on)
         else
             STATE.AutoMine = (on == true)
         end
-
-        -- เปิดได้ทีละอัน: ถ้าเปิด Mine -> ปิด Train ใน UI ทันที
-        if on and swTrain then
-            swTrain.set(false)
-        end
+        if on and swTrain then swTrain.set(false) end
     end)
 
     swTrain = makeAV1Switch(row2, (AA1 and AA1.getTrain and AA1.getTrain()) or (STATE.AutoTrain == true), function(on)
@@ -1028,25 +1119,31 @@ registerRight("Home", function(scroll)
         else
             STATE.AutoTrain = (on == true)
         end
-
-        if on and swMine then
-            swMine.set(false)
-        end
+        if on and swMine then swMine.set(false) end
     end)
 
-    ------------------------------------------------------------------------
-    -- INIT SYNC UI จากเซฟ
-    ------------------------------------------------------------------------
+    -- bind ให้ AA1 ดันสวิตช์เราได้ตอน “ตรวจจับ external toggle”
+    if AA1 and AA1._uiBind then
+        AA1._uiBind({
+            setMine  = function(v) if swMine then swMine.set(v) end end,
+            setTrain = function(v) if swTrain then swTrain.set(v) end end,
+        })
+    end
+
+    -- เปิด detect ตอน UI ถูกสร้าง (เผื่อรันช้ากว่า)
+    if AA1 and AA1._setupDetect then
+        task.defer(function()
+            AA1._setupDetect()
+        end)
+    end
+
+    -- INIT SYNC UI จาก STATE
     task.defer(function()
         local mineOn  = (AA1 and AA1.getMine  and AA1.getMine())  or (STATE.AutoMine  == true)
         local trainOn = (AA1 and AA1.getTrain and AA1.getTrain()) or (STATE.AutoTrain == true)
-
-        if mineOn and trainOn then
-            trainOn = false
-        end
-
-        swMine.set(mineOn)
-        swTrain.set(trainOn)
+        if mineOn and trainOn then trainOn = false end
+        if swMine then swMine.set(mineOn) end
+        if swTrain then swTrain.set(trainOn) end
     end)
 end)
 --===== UFO HUB X • Home – Auto Rebirth (AA1 Runner + Model A V1 + A V2) =====
