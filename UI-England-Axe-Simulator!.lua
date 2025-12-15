@@ -3457,9 +3457,6 @@ end)
 --===== UFO HUB X • Quest – Auto Event Upgrades 🎁 (AA1 + Model A V1 + V A2 Overlay) =====
 -- Row1 (A V1 Switch): Auto Buy Event Upgrades
 -- Row2 (A V2 Overlay 100%): Select Event Upgrades (4 buttons, multi-select, click again = cancel)
--- Remote:
--- local args = {"Event Upgrade","More Event Damage"}
--- ReplicatedStorage.Paper.Remotes.__remotefunction:InvokeServer(unpack(args))
 
 ----------------------------------------------------------------------
 -- AA1 RUNNER (ไม่มี UI, ทำงานทันทีตอนรันสคริปต์หลัก)
@@ -3615,7 +3612,7 @@ do
         end,
     }
 
-    -- AA1 Auto-Run: ถ้าเคยเปิดไว้ → ทำงานเลย ไม่ต้องกด Quest
+    -- AA1 Auto-Run
     task.defer(function()
         applyFromState()
     end)
@@ -3627,8 +3624,9 @@ end
 registerRight("Quest", function(scroll)
     local TweenService      = game:GetService("TweenService")
     local UserInputService  = game:GetService("UserInputService")
+    local HttpService       = game:GetService("HttpService")
 
-    local AA1 = _G.UFOX_AA1 and _G.UFOX_AA1["QuestEventUpgrades"]
+    local AA1   = _G.UFOX_AA1 and _G.UFOX_AA1["QuestEventUpgrades"]
     local STATE = (AA1 and AA1.state) or { Enabled=false, Selected={} }
 
     ------------------------------------------------------------------------
@@ -3667,7 +3665,7 @@ registerRight("Quest", function(scroll)
     end
 
     local function trim(s)
-        return (s:gsub("^%s*(.-)%s*$", "%1"))
+        return (tostring(s or ""):gsub("^%s*(.-)%s*$", "%1"))
     end
 
     ------------------------------------------------------------------------
@@ -3706,7 +3704,7 @@ registerRight("Quest", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- HEADER (ชื่อระบบ)
+    -- HEADER
     ------------------------------------------------------------------------
     local header = Instance.new("TextLabel")
     header.Name = "QEU_Header"
@@ -3797,7 +3795,7 @@ registerRight("Quest", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- UPGRADE LIST (4 ปุ่ม)
+    -- UPGRADE LIST
     ------------------------------------------------------------------------
     local UPGRADE_LIST = {
         "More Event Damage",
@@ -3806,7 +3804,6 @@ registerRight("Quest", function(scroll)
         "Present Luck",
     }
 
-    -- กันกรณี STATE.Selected ว่าง
     STATE.Selected = STATE.Selected or {}
     for _, n in ipairs(UPGRADE_LIST) do
         if STATE.Selected[n] == nil then
@@ -3815,12 +3812,12 @@ registerRight("Quest", function(scroll)
     end
 
     ------------------------------------------------------------------------
-    -- Row1: Switch (เปิดให้ Row2 ทำงาน)
+    -- Row1: Switch (คุม AA1 อย่างเดียว)
     ------------------------------------------------------------------------
     local row1 = makeRow("QEU_Row1", base + 2, "Auto Buy Event Upgrades")
 
     ------------------------------------------------------------------------
-    -- Row2: A V2 Overlay Select Options
+    -- Row2: Overlay (เปิดได้เลย ไม่ต้องพึ่ง Row1)
     ------------------------------------------------------------------------
     local row2 = makeRow("QEU_Row2", base + 3, "Select Event Upgrades")
     local panelParent = scroll.Parent
@@ -3874,7 +3871,7 @@ registerRight("Quest", function(scroll)
     arrow.Text = "▼"
 
     ------------------------------------------------------------------------
-    -- V A2 Popup Panel (Search + Glow Buttons + Close-on-outside-click)
+    -- V A2 Popup Panel (Search + Glow Buttons + TapAnywhereClose)
     ------------------------------------------------------------------------
     local optionsPanel
     local inputConn
@@ -3896,6 +3893,11 @@ registerRight("Quest", function(scroll)
         end
     end
 
+    local function hardResetClosed()
+        opened = false
+        updateSelectVisual(false)
+    end
+
     local function closePanel()
         if optionsPanel then
             optionsPanel:Destroy()
@@ -3904,8 +3906,7 @@ registerRight("Quest", function(scroll)
         searchBox = nil
         allButtons = {}
         disconnectInput()
-        opened = false
-        updateSelectVisual(false)
+        hardResetClosed()
     end
 
     local function openPanel()
@@ -3936,6 +3937,13 @@ registerRight("Quest", function(scroll)
 
         corner(optionsPanel, 12)
         stroke(optionsPanel, 2.4, THEME.GREEN)
+
+        -- ถ้าโดน Destroy/ย้ายพ่อ/หายเอง -> รีเซ็ตปุ่มให้กลับปกติ
+        optionsPanel.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                hardResetClosed()
+            end
+        end)
 
         local body = Instance.new("Frame")
         body.Name = "Body"
@@ -4018,6 +4026,7 @@ registerRight("Quest", function(scroll)
 
             local st = stroke(btn, 1.6, THEME.GREEN_DARK)
             st.Transparency = 0.4
+            st.ZIndex = btn.ZIndex + 1
 
             local glowBar = Instance.new("Frame")
             glowBar.Name = "GlowBar"
@@ -4026,7 +4035,7 @@ registerRight("Quest", function(scroll)
             glowBar.BorderSizePixel = 0
             glowBar.Size = UDim2.new(0, 3, 1, 0)
             glowBar.Position = UDim2.new(0, 0, 0, 0)
-            glowBar.ZIndex = btn.ZIndex + 1
+            glowBar.ZIndex = btn.ZIndex + 2
             glowBar.Visible = false
 
             local function update()
@@ -4035,6 +4044,11 @@ registerRight("Quest", function(scroll)
                     st.Color        = THEME.GREEN
                     st.Thickness    = 2.4
                     st.Transparency = 0
+                    glowBar.Visible = true
+                else
+                    st.Color        = THEME.GREEN_DARK
+                    st.Thickness    = 1.6
+                    st.Transparency = 0.4
                     glowBar.Visible = false
                 end
             end
@@ -4072,9 +4086,7 @@ registerRight("Quest", function(scroll)
 
         -- Search filter
         local function applySearch()
-            local q = trim(searchBox.Text or "")
-            q = string.lower(q)
-
+            local q = string.lower(trim(searchBox.Text))
             if q == "" then
                 for _, btn in ipairs(allButtons) do
                     btn.Visible = true
@@ -4082,10 +4094,9 @@ registerRight("Quest", function(scroll)
             else
                 for _, btn in ipairs(allButtons) do
                     local text = string.lower(btn.Text or "")
-                    btn.Visible = string.find(text, q, 1, true) ~= nil
+                    btn.Visible = (string.find(text, q, 1, true) ~= nil)
                 end
             end
-
             listHolder.CanvasPosition = Vector2.new(0, 0)
         end
 
@@ -4093,15 +4104,20 @@ registerRight("Quest", function(scroll)
         searchBox.Focused:Connect(function() sbStroke.Color = THEME.GREEN end)
         searchBox.FocusLost:Connect(function() sbStroke.Color = THEME.GREEN end)
 
-        -- GLOBAL CLICK CLOSE: แตะที่ไหนก็ปิด ยกเว้น (panel / selectBtn / searchBox)
+        -- GLOBAL CLOSE:
+        -- แตะ/คลิก/สกอลล์ "ทั้งหน้าจอ" = ปิด
+        -- ยกเว้น: แตะใน optionsPanel / แตะปุ่ม selectBtn / แตะช่อง searchBox
         inputConn = UserInputService.InputBegan:Connect(function(input, gp)
             if gp then return end
             if not optionsPanel then return end
 
             local t = input.UserInputType
-            if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then
-                return
-            end
+            local isTap =
+                (t == Enum.UserInputType.MouseButton1)
+                or (t == Enum.UserInputType.Touch)
+                or (t == Enum.UserInputType.MouseWheel)
+
+            if not isTap then return end
 
             local pos = input.Position
             local keep =
@@ -4113,26 +4129,13 @@ registerRight("Quest", function(scroll)
                 closePanel()
             end
         end)
+
+        opened = true
+        updateSelectVisual(true)
     end
 
     ------------------------------------------------------------------------
-    -- Row2 enable/disable by Row1
-    ------------------------------------------------------------------------
-    local row2Enabled = false
-    local function setRow2Enabled(on)
-        row2Enabled = (on == true)
-        if not row2Enabled then
-            closePanel()
-        end
-        selectBtn.TextTransparency = row2Enabled and 0 or 0.35
-        selectStroke.Transparency  = row2Enabled and 0.4 or 0.75
-        if not opened then
-            updateSelectVisual(false)
-        end
-    end
-
-    ------------------------------------------------------------------------
-    -- Wire Row1 switch -> AA1
+    -- Wire Row1 switch -> AA1 (คุมระบบวิ่งอย่างเดียว ไม่ล็อค Row2 แล้ว)
     ------------------------------------------------------------------------
     local sw1 = makeAV1Switch(row1, STATE.Enabled, function(on)
         if AA1 and AA1.setEnabled then
@@ -4140,27 +4143,20 @@ registerRight("Quest", function(scroll)
         else
             STATE.Enabled = (on == true)
         end
-        setRow2Enabled(STATE.Enabled)
     end)
 
-    -- Sync ตอนเปิดแท็บ
     task.defer(function()
         sw1.set(STATE.Enabled)
-        setRow2Enabled(STATE.Enabled)
     end)
 
     ------------------------------------------------------------------------
-    -- Select Options toggle (A V2)
+    -- Select Options toggle (เปิด/ปิด แผงขวา)
     ------------------------------------------------------------------------
     selectBtn.MouseButton1Click:Connect(function()
-        if not row2Enabled then return end
-
         if opened then
             closePanel()
         else
             openPanel()
-            opened = true
-            updateSelectVisual(true)
         end
     end)
 end)
