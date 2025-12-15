@@ -2539,7 +2539,7 @@ registerRight("Home", function(scroll)
     header.TextSize = 16
     header.TextColor3 = THEME.WHITE
     header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Text = "Auto Potion 🧪"
+    header.Text = "》》》Auto Potion 🧪《《《"
     header.LayoutOrder = base + 1
 
     ------------------------------------------------------------------------
